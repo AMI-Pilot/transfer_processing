@@ -41,13 +41,15 @@ digraph {
     distributing;
     hcp_soft_failed;
     hcp_hard_failed [shape="house"];
+    dist_hard_failed [shape="house"];
     submitting;
     dist_waiting;
+    distributed [shape="house"];
     cleaning;
 
     finished [shape="house"];
     to_delete [shape="house"];
-    deleted [shape="house"];
+    deleted;
     debugging [shape="octagon"];
 
 
@@ -89,13 +91,13 @@ digraph {
     distributed -> storing;
     storing -> finished [label="Package\npushed to SDA"];
     storing -> sda_soft_failed [label="Push to SDA failed"];
-    sda_soft_failed -> storing [label="Retry a finite\nnumber of times"];
+    sda_soft_failed -> distributed [label="Retry a finite\nnumber of times"];
     sda_soft_failed -> sda_hard_failed [label="SDA retries\nexhausted"];
     sda_hard_failed -> cleaning;
     
     
     
-    to_delete -> deleted [label="Manually\nforce deletion"];
+    to_delete -> cleaning [label="Manually\nforce deletion"];
     cleaning -> deleted [label="Failed packages\n moved to temporary\n debugging storage"];
     deleted -> debugging [label="May move to\nany other house\nstate manually"];
 

@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"Move failed packages to deleted directory"
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+import logging
+
+logger = logging.getLogger()
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
+    ami = Ami()
+    pf = PackageFactory(ami)
+    
+    deleteddir = ami.get_directory('deleted')
+    workspace = ami.get_directory('workspace')
+
+    for state in ('validation_failed', 'local_failed', 'processing_failed', 
+                  'hcp_hard_failed', 'dist_hard_failed','sda_hard_failed',
+                  'to_delete'):
+        for pkg in pf.packages_by_state(state):
+            pkgdir = workspace / pkg.get_dirname()
+            if not pkgdir.exists():
+                logger.debug(f"Skipping: Package {pkg.get_id} in state {pkg.get_state()} doesn't exist in the working directory")
+                continue
+
+            ostate = pkg.get_state()
+            try:
+                pkg.set_state('cleaning')            
+                pkgdir.rename(deleteddir / pkg.get_dirname())
+                pkg.set_state('deleted')
+            except Exception as e:
+                pkg.log("error", f"Failed to clean up {pkg.get_id()}: {e}")
+                pkg.set_state(ostate)
+
+
+if __name__ == "__main__":
+    main()

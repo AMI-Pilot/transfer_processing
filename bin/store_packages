@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"copy packages from 'distributed' to SDA and then finish them"
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+from ami.package import Package
+from iulcore.hsicore import HSICore, HSIError
+from time import time
+import hashlib
+import yaml
+import logging
+
+logger = logging.getLogger()
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
+    ami = Ami()
+    pf = PackageFactory(ami)
+        
+    workspace = ami.get_directory('workspace')
+    finished = ami.get_directory("finished")
+    my_config = ami.get_config('store_packages')
+
+    for pkg in pf.packages_by_state('distributed'):
+        pkg.set_state('storing')        
+        try:
+            pkgdir = workspace / pkg.get_dirname()
+            if not pkgdir.exists():
+                raise FileNotFoundError(f"Package doesn't have a local copy in the workspace")
+
+            # upload to SDA
+            hsi = HSICore(my_config['root'],
+                          hsiBinary=my_config['hsi'],
+                          keyTab=my_config['keytab'],
+                          userName=my_config['user'])
+            todo = []
+            for f in pkgdir.glob("**/*"):
+                if f.is_dir():
+                    todo.append(['mkdir', pkgdir.name + "/" + str(f.relative_to(pkgdir))])
+                else:                    
+                    m = hashlib.md5()
+                    with open(f, mode="rb") as h:
+                        for chunk in iter(lambda: h.read(4096 * 1024), b""):
+                            m.update(chunk)
+                    md5 = m.hexdigest()
+                    todo.append(['put', pkgdir.name + "/" + str(f.relative_to(pkgdir)), md5])
+
+            hsi.mkdir(pkgdir.name)
+            for t in todo:
+                if t[0] == "mkdir":
+                    hsi.mkdir(t[1])
+                elif t[0] == "put":
+                    hsi.put(t[1], t[2])
+                    md5 = hsi.get_checksum(t[2])
+                    if t[3] != md5:
+                        raise IOError(f"Checksum failed for {t[0]}:  got {md5}, but expected {t[3]}")
+
+            pkgdir.rename(finished / pkg.get_dirname())            
+            pkg.set_state('finished')
+        except Exception as e:
+            pkg.log('error', f"Could not store to SDA: {e}")
+            pkg.set_state('sda_soft_failed')
+            count = pkg.get_app_data('store_packages', 'retries')
+            count = 0 if count is None else count
+
+            if count >= my_config['retries']:
+                # we've failed too many times.  Go ahead and fail it.
+                pkg.log('error', 'SDA Store retries exhausted')
+                pkg.set_state('sda_hard_failed')
+                pkg.set_app_data('store_packages', 'retries', 0)
+            else:
+                pkg.set_app_data('store_packages', 'retries', count + 1)
+
+if __name__ == "__main__":
+    main()

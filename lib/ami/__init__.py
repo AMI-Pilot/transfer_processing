@@ -49,6 +49,11 @@ class Ami:
             sys.db = (os.getpid(), mdb)
         return sys.db[1]
 
+    def get_directory(self, name):
+        "Get a directory path object from the config file 'directories' section"
+        return Path(self.resolve_path(self.config['directories'][name]))
+
+
     def resolve_path(self, path):
         "Resolve a path relative to the install"
         return Path(self.root, path)

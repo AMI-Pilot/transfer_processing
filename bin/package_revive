@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"Revive a deleted package and put it back into the workflow"
+import _preamble
+import argparse
+from ami import Ami
+from ami.package_factory import PackageFactory
+import logging
+from pathlib import Path
+
+logger = logging.getLogger()
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("newstate", help="New state")
+    parser.add_argument("id", nargs="+", help="Package ID to revive")
+    args = parser.parse_args()
+
+    ami = Ami()
+    pf = PackageFactory(ami)
+    deldir = ami.get_directory("deleted")
+    workspace = ami.get_directory("workspace")
+
+    for i in args.id:
+        try:
+            pkg = pf.get_package(i)                
+        except ValueError as e:
+            print(f"Cannot resolve {i}: {e}")
+            continue
+        
+        try:
+            if pkg.get_state() != "deleted":
+                logger.warning(f"Cannot revive {pkg.get_id()} since it is not deleted")
+            elif not Path(deldir, pkg.get_dirname()).exists():
+                logger.warning(f"Cannot revive {pkg.get_id()} because it doesn't exist in the deleted directory")
+            else:
+                pkg.set_state(args.newstate)
+                Path(deldir, pkg.get_dirname()).rename(Path(workspace, pkg.get_dirname()))
+                
+        except ValueError as e:
+            print(f"Cannot set state for {pkg.get_id()}: {e}")
+            continue
+
+
+if __name__ == "__main__":
+    main()

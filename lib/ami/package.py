@@ -4,10 +4,9 @@ import logging
 
 class Package:
     states = {
-        'transferred': True,
+        'transferred': False,
         'validating': False,
         'validation_failed': True,
-        'moving': False,
         'shaping': False,
         'accepted': True,
         'local_failed': True,
@@ -15,9 +14,9 @@ class Package:
         'processed': True,
         'processing_failed': True,
         'storing': False,
-        'stored': True,
         'sda_soft_failed': False,
         'distributing': False,
+        'distributed': True,
         'sda_hard_failed': True,
         'submitting': False,
         'hcp_soft_failed': False,
@@ -28,7 +27,7 @@ class Package:
         'dist_hard_failed': False,
         'cleaning': False,
         'to_delete': True,
-        'deleted': True,
+        'deleted': False,
     }
 
     @staticmethod
@@ -38,11 +37,13 @@ class Package:
             raise ValueError("Invalid state")
         
         data = {
-            'version': 1,
+            'version': 2,
             'id': pkgid,
             'timestamp': datetime.now().strftime("%Y%m%d-%H%M%S"),
             'state': state,
-            'log': []
+            'log': [],
+            'app_data': {}
+
         }
 
         res = db.packages.insert_one(data)        
@@ -58,7 +59,12 @@ class Package:
         self.data = self.db.packages.find_one({'_id': _id})        
         if self.data is None:
             raise KeyError("No package with that id")
-
+        
+        # Migrate to version 2
+        if self.data['version'] < 2:
+            self.db.packages.update_one({'_id': _id}, {'$set': {'version': 2, 'app_data': {}}})
+            self.__init__(db, _id)  # get it again from the DB
+        
     def __str__(self):
         return str(self.data)
 
@@ -108,3 +114,23 @@ class Package:
         "Return the object timestamp"
         return self.data['timestamp']
 
+    def get_dirname(self):
+        "Return the directory name used for the package"
+        return self.get_id() + "_" + self.get_timestamp()
+
+    def get_app_data(self, appname, key):
+        "Get stored application-specific data for this object"
+        return self.data['app_data'].get(appname, {}).get(key, None)
+
+    def set_app_data(self, appname, key, data):
+        "Set the stored application-specific data for this object"
+        if appname not in self.data['app_data']:
+            self.data['app_data'][appname] = {}
+            self.db.packages.update_one({'_id': self.data['_id']},
+                                        {'$set': {'app_data.' + appname: {}}})
+        
+        self.data['app_data'][appname][key] = data
+        self.db.packages.update_one({'_id': self.data['_id']},
+                                    {'$set': {'app_data.' + appname + "." + key: data}})
+
+                                    

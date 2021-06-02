@@ -9,16 +9,22 @@ from ami.package import Package
 from time import time
 import hashlib
 import yaml
+import logging
+
+logger = logging.getLogger()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
     args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
     ami = Ami()
     pf = PackageFactory(ami)
 
-    dropbox = ami.resolve_path(ami.config['directories']['dropbox'])
-    workspace = ami.resolve_path(ami.config['directories']['workspace'])
+    dropbox = ami.get_directory('dropbox')
+    workspace = ami.get_directory('workspace')    
     my_config = ami.get_config('accept_packages')
     
     for pkgdir in dropbox.glob("*.transferred"):
@@ -37,12 +43,12 @@ def main():
         pkg.set_state('validating')
         errors = []
         # make sure it looks like a bag
-        if not Path(pkgdir, "bagit.txt").exists():
+        if not (pkgdir / "bagit.txt").exists():
             errors.append("bagit.txt doesn't exist.  Not a valid bag")
         
         if not errors:
             try:
-                with open(Path(pkgdir, "bag-info.txt")) as f:
+                with open(pkgdir / "bag-info.txt") as f:
                     baginfo = yaml.safe_load(f)
                 size, filecount = [int(x) for x in str(baginfo.get('Payload-Oxum', '-1.-1')).split('.')]
                 if size < 0:
@@ -64,7 +70,7 @@ def main():
             md5s = {}
             try:
                 for manfile in ('tagmanifest-md5.txt', 'manifest-md5.txt'):
-                    with open(Path(pkgdir, manfile)) as f:
+                    with open(pkgdir / manfile) as f:
                         for line in f.readlines():
                             line = line.strip()
                             md5, filename = line.split(' ', 1)
@@ -77,7 +83,7 @@ def main():
             for filename, md5 in md5s.items():
                 try:
                     m = hashlib.md5()
-                    with open(Path(pkgdir, filename), mode="rb") as d:
+                    with open(pkgdir / filename, mode="rb") as d:
                         for chunk in iter(lambda: d.read(4096 * 1024), b""):
                             m.update(chunk)
                     cmd5 = m.hexdigest()
@@ -98,12 +104,12 @@ def main():
         pkg.set_state('shaping')
         try:
             # create the wrapper dir
-            wpkgdir = Path(workspace, pkg_id + "_" + pkg.get_timestamp())
+            wpkgdir = workspace / pkg.get_dirname()
             wpkgdir.mkdir()
             # move the content (stripping the .transferred)
-            pkgdir.rename(Path(wpkgdir, pkg_id))
+            pkgdir.rename(wpkgdir / pkg_id)
             # create the generated directory
-            Path(wpkgdir, "generated").mkdir()
+            (wpkgdir / "generated").mkdir()
         except IOError as e:
             pkg.log("error", f"Cannot move package to workspace: {e}")
             pkg.set_state("local_failed")
