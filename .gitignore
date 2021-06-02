@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv
+
+data/dropbox/[0-9A-Za-z]*
+data/retrieval/[0-9A-Za-z]*
+data/workspace/[0-9A-Za-z]*
+logs/[0-9A-Za-z]*
+var/locks/[0-9A-Za-z]*
+

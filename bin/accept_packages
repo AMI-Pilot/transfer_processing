@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+from ami.package import Package
+from time import time
+import hashlib
+import yaml
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    args = parser.parse_args()
+    ami = Ami()
+    pf = PackageFactory(ami)
+
+    dropbox = ami.resolve_path(ami.config['directories']['dropbox'])
+    workspace = ami.resolve_path(ami.config['directories']['workspace'])
+    my_config = ami.get_config('accept_packages')
+    
+    for pkgdir in dropbox.glob("*.transferred"):
+        if not pkgdir.is_dir() or pkgdir.stat().st_mtime > time() - my_config.get('age', 600):
+            # file isn't a directory or it isn't old enough.
+            continue
+
+        pkg_id = pkgdir.stem
+
+        if pf.package_exists(pkg_id):
+            # leave a message in the old one that it is going to be overwritten
+            old = pf.get_package(pkg_id)
+            old.log("warn", "This package is being overwritten by a new version")
+
+        pkg = Package.create(ami.get_db(), pkg_id)
+        pkg.set_state('validating')
+        errors = []
+        # make sure it looks like a bag
+        if not Path(pkgdir, "bagit.txt").exists():
+            errors.append("bagit.txt doesn't exist.  Not a valid bag")
+        
+        if not errors:
+            try:
+                with open(Path(pkgdir, "bag-info.txt")) as f:
+                    baginfo = yaml.safe_load(f)
+                size, filecount = [int(x) for x in str(baginfo.get('Payload-Oxum', '-1.-1')).split('.')]
+                if size < 0:
+                    errors.append(f"Payload oxum seems weird.  It is: {size}.{filecount}")
+                csize = cfcount = 0                
+                for f in Path(pkgdir, "data").iterdir():
+                    csize += f.stat().st_size
+                    cfcount += 1
+                if csize != size:
+                    errors.append(f"Payload oxum specifies a size of {size}, but we got {csize}")
+                if cfcount != filecount:
+                    errors.append(f"Payload oxum specifies a file count pf {filecount}, but we got {cfcount}")
+
+            except IOError as e:
+                errors.append(f"Trouble processing bag-info.txt: {e}")
+
+        # load the md5 manifests
+        if not errors:            
+            md5s = {}
+            try:
+                for manfile in ('tagmanifest-md5.txt', 'manifest-md5.txt'):
+                    with open(Path(pkgdir, manfile)) as f:
+                        for line in f.readlines():
+                            line = line.strip()
+                            md5, filename = line.split(' ', 1)
+                            md5s[filename] = md5.lower()
+            except IOError as e:
+                errors.append(f"IOError when loading MD5s from manifests: {e}")
+
+        # load the md5 manifests
+        if not errors:
+            for filename, md5 in md5s.items():
+                try:
+                    m = hashlib.md5()
+                    with open(Path(pkgdir, filename), mode="rb") as d:
+                        for chunk in iter(lambda: d.read(4096 * 1024), b""):
+                            m.update(chunk)
+                    cmd5 = m.hexdigest()
+                    if md5.lower() != cmd5.lower():
+                        errors.append(f"Invalid MD5 for {filename}:  got {cmd5}, but expected {md5}")            
+                except IOError as e:
+                    errors.append(f"IOError when generating md5s: {e}")
+
+        # TODO more checks?
+
+
+        if errors:            
+            pkg.log("error", "Validation has failed:\n" + "\n".join(errors))
+            pkg.set_state("validation_failed")
+            continue
+        
+
+        pkg.set_state('shaping')
+        try:
+            # create the wrapper dir
+            wpkgdir = Path(workspace, pkg_id + "_" + pkg.get_timestamp())
+            wpkgdir.mkdir()
+            # move the content (stripping the .transferred)
+            pkgdir.rename(Path(wpkgdir, pkg_id))
+            # create the generated directory
+            Path(wpkgdir, "generated").mkdir()
+        except IOError as e:
+            pkg.log("error", f"Cannot move package to workspace: {e}")
+            pkg.set_state("local_failed")
+            continue
+        # Looks good
+        pkg.set_state('accepted')
+
+
+
+
+
+        
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    main()

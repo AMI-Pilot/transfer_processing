@@ -1,0 +1,102 @@
+digraph {
+    /* my usual settings */
+    node [
+        margin = 0,
+        fontsize = 8,
+        fontname = "Helvetica",
+        shape = "oval",
+        ];
+    edge [
+        margin = 0,
+        fontsize = 8,
+        fontname = "Helvetica",
+        arrowsize = .75,
+        colorscheme = "set312",
+        penwidth = 2,
+        ];
+    graph [
+        labelloc = t,
+        fontsize = 12,
+        fontname = "Helvetica",
+        rankdir = LR,
+        ];
+
+    label = "IU/UM object flow";
+
+    start [label="START", shape="rectangle"];
+    transferred; // [shape="house"];
+    validating;
+    validation_failed [shape="house"];
+    //moving;
+    shaping;
+    local_failed [shape="house"];
+    accepted [shape="house"];
+    processing;
+    processing_failed [shape="house"];
+    processed [shape="house"];
+    storing;
+    //stored [shape="house"];
+    sda_soft_failed;
+    sda_hard_failed[shape="house"];
+    distributing;
+    hcp_soft_failed;
+    hcp_hard_failed [shape="house"];
+    submitting;
+    dist_waiting;
+    cleaning;
+
+    finished [shape="house"];
+    to_delete [shape="house"];
+    deleted [shape="house"];
+    debugging [shape="octagon"];
+
+
+    start->transferred [label="Package\ndelivered"];
+    transferred-> validating;
+    validating -> shaping [label="Package content\nis valid"];
+    validating -> validation_failed [label="Package content\nisn't valid"];
+    validation_failed -> cleaning;
+    //moving -> shaping [label="Moved package to\n working storage"];
+    //moving -> local_failed;
+    shaping -> accepted [label="Working copy\nrestructured\nlike SDA"];
+    shaping -> local_failed;
+    local_failed -> cleaning;
+    accepted -> processing;
+    processing -> processed [label="Derivatives\ncreated"];
+    processing -> processing_failed [label="Derivative\ncreation failed"];
+    processing_failed -> cleaning;
+    
+    
+    processed -> distributing;
+    distributing -> submitting [label="Derivatives\npushed to HCP"];
+    distributing -> hcp_soft_failed [label="HCP push failed"];
+    hcp_soft_failed ->processed [label="Retry a finite\nnumber of times"];
+    hcp_soft_failed -> hcp_hard_failed [label="HCP retries\nexhausted"];
+    hcp_hard_failed -> cleaning;
+    submitting -> dist_waiting [label="Submitting\nmetadata to\nSwitchyard"];
+    submitting -> dist_soft_failed [label="Switchyard\ntemporarily\nunavailable"];
+    submitting -> dist_hard_failed [label="Package cannot\nbe distributed"];
+    dist_waiting -> distributed [label="Distribution\nsuccessful"];
+    dist_waiting -> dist_hard_failed [label="Distribution\nunsuccessful"];
+    dist_waiting -> dist_soft_failed [label="Distribution\ntemporarily\nunsuccessful"]
+    dist_soft_failed -> dist_hard_failed [label="Retries\nexhausted"];
+    dist_soft_failed -> submitting [label="Retry\nsubmission"];
+    dist_hard_failed -> cleaning;
+    
+
+
+    
+    distributed -> storing;
+    storing -> finished [label="Package\npushed to SDA"];
+    storing -> sda_soft_failed [label="Push to SDA failed"];
+    sda_soft_failed -> storing [label="Retry a finite\nnumber of times"];
+    sda_soft_failed -> sda_hard_failed [label="SDA retries\nexhausted"];
+    sda_hard_failed -> cleaning;
+    
+    
+    
+    to_delete -> deleted [label="Manually\nforce deletion"];
+    cleaning -> deleted [label="Failed packages\n moved to temporary\n debugging storage"];
+    deleted -> debugging [label="May move to\nany other house\nstate manually"];
+
+}

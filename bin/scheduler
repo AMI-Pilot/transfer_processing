@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""
+This is the master process -- it should be a cronjob that is run every minute
+
+It will start all of the worker jobs, verifying that only one copy is running
+at any given time.
+
+
+"""
+import _preamble
+from ami import Ami
+import argparse
+import logging
+from pathlib import Path
+from datetime import datetime
+import subprocess
+import os
+import sys
+
+logger = logging.getLogger()
+
+def main():
+    ami = Ami()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', default=False, action='store_true', help="Turn on debugging")    
+    subparsers = parser.add_subparsers(help="Mode", dest="mode")
+    p = subparsers.add_parser("schedule", help="Schedule pending tasks")
+    p = subparsers.add_parser("status", help="Show system status")
+    p = subparsers.add_parser("panic", help="Manage the system panic state")
+    p.add_argument("state", choices=['on', 'off', 'check'], help="System panic on/off or check")
+    p = subparsers.add_parser("hold", help="Put a task on hold")
+    p.add_argument("task", help="The task to modify")
+    p.add_argument("state", choices=['on', 'off'], help="Hold state")    
+    args = parser.parse_args()
+
+    if args.mode is None:
+        parser.print_help()
+        exit(1)
+
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+    
+    config = ami.get_config('scheduler')
+
+    if args.mode == "panic":
+        panic(ami, config, args.state)
+    elif args.mode == "hold":
+        hold(ami, config, args.task, args.state)
+    elif args.mode == "status":
+        status(ami, config)
+    elif args.mode == "schedule":
+        schedule(ami, config)
+
+
+
+def panic(ami, config, state):
+    panicfile = ami.resolve_path(Path(config['lockdir'], 'panic'))    
+    if state == 'on':
+        panicfile.touch()
+    elif state == 'off':
+        panicfile.unlink(missing_ok=True)
+
+
+def hold(ami, config, task, state):
+    holdfile = Path(ami.resolve_path(Path(config['lockdir'], f"{task}.hold")))
+    if state == "on":
+        holdfile.touch()
+    else:
+        holdfile.unlink(missing_ok=True)
+
+
+def schedule(ami, config):
+    panicfile = ami.resolve_path(Path(config['lockdir'], 'panic'))
+    if panicfile.exists():
+        logger.debug("In panic mode, not scheduling anything")
+        exit(0)
+
+    bindir = Path(sys.path[0] + "/../bin")
+    for task in config['tasks']:
+        exefile = Path(bindir, task)
+        if not (exefile.exists() and exefile.is_file() and exefile.stat().st_mode & 0o111):
+            logger.debug(f"Task {task} ({exefile!s}) is not executable.  Skipping")
+            continue
+
+        # do a double-fork to detach the child from this process.
+        if os.fork() == 0:
+            # this is the first child
+            # detach from the parent.
+            os.setsid()
+            sys.stdout.close()
+            sys.stdin.close()
+            sys.stderr.close()
+            if os.fork() == 0:
+                # the grandchild..where we'll work
+                lockfile = Path(ami.resolve_path(config['lockdir']), task + ".lock")
+                if lockfile.exists():
+                    logging.debug(f"Skipping {task}:  lockfile is present")
+                else:
+                    try:
+                        lockfile.touch()
+                        p = subprocess.run(str(exefile), 
+                                           stdout=subprocess.PIPE, 
+                                           stderr=subprocess.STDOUT, 
+                                           encoding="utf-8")
+                        if p.returncode != 0:
+                            logger.error(f"Task {task} failed:\n{p.stdout}")
+                    except Exception as e:
+                        logger.error(f"Failed when executing task {task}: {e}")
+                    finally:
+                        lockfile.unlink(missing_ok=True)                
+        
+
+            # both child and grandchild exit here.
+            sys.exit(0)
+
+
+
+
+def status(ami, config):
+    lockdir = ami.resolve_path(config['lockdir'])
+    panicfile = Path(lockdir, "panic")
+    print(f"Panic is {'on' if panicfile.exists() else 'off'}")
+
+    print("Task holds:")
+    for h in lockdir.glob("*.hold"):
+        print(f"  {h.stem} {datetime.fromtimestamp(h.stat().st_mtime)}")
+
+    print("\nTask locks:")
+    for l in lockdir.glob("*.lock"):
+        print(f"  {l.stem} {datetime.fromtimestamp(l.stat().st_mtime)}")
+
+
+
+if __name__ == "__main__":
+    main()
+
+

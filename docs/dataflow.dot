@@ -1,0 +1,42 @@
+digraph {
+    /* my usual settings */
+    node [
+        margin = 0,
+        fontsize = 8,
+        fontname = "Helvetica",
+        shape = "rectangle",
+        ];
+    edge [
+        margin = 0,
+        fontsize = 8,
+        fontname = "Helvetica",
+        arrowsize = .75,
+        colorscheme = "set312",
+        penwidth = 2,
+        ];
+    graph [
+        labelloc = t,
+        fontsize = 12,
+        fontname = "Helvetica",
+        rankdir = LR,
+        ];
+
+    label = "IU/UM Dataflow";
+
+    um [label="Michigan"];
+    dropbox [label="Dropbox\non Capybara"];
+    workspace [label="Work disk\non Capybara"];
+    sda [label="Scholarly\nData Archive"];
+    hcp [label="Hitachi\nContent\nPlatform"];
+    avalon [label="Media\nCollections\nOnline"];
+
+    um -> dropbox [label="upload"];
+    dropbox -> workspace [label="move"];
+    workspace -> sda [label="archive"];
+    workspace -> hcp [label="publish"];
+    hcp -> avalon [label="stream"];
+    sda -> dropbox [label="retrieve"];
+    dropbox -> um [label="retrieve"];
+
+
+}
