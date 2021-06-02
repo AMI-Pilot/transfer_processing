@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"process packages and create derivatives"
+import _preamble
+import argparse
+from ami import Ami
+from ami.package_factory import PackageFactory
+from iulcore.hsicore import HSICore
+import hashlib
+import logging
+
+logger = logging.getLogger()
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
+    ami = Ami()
+    pf = PackageFactory(ami)
+        
+    workspace = ami.get_directory('workspace')
+    finished = ami.get_directory("finished")
+    my_config = ami.get_config('process_packages')
+
+    for pkg in pf.packages_by_state('accepted'):
+        pkg.set_state('processing')        
+        try:
+            raise NotImplementedError("Not yet!")
+
+
+            pkg.set_state('processed')
+        except Exception as e:
+            pkg.log('error', f"Could not store to SDA: {e}")
+            pkg.set_state('processing_failed')
+
+if __name__ == "__main__":
+    main()

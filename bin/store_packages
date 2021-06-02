@@ -2,14 +2,10 @@
 "copy packages from 'distributed' to SDA and then finish them"
 import _preamble
 import argparse
-from pathlib import Path
 from ami import Ami
 from ami.package_factory import PackageFactory
-from ami.package import Package
-from iulcore.hsicore import HSICore, HSIError
-from time import time
+from iulcore.hsicore import HSICore
 import hashlib
-import yaml
 import logging
 
 logger = logging.getLogger()
