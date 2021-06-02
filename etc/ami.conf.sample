@@ -28,8 +28,8 @@ mongodb:
   connection:
     host: localhost
     port: 8115
-    username: bdwheele
-    password: test
+    username: asdfasdf
+    password: asdfasdf
   database: ami
 
 directories:
@@ -56,6 +56,6 @@ apps:
   store_packages:
     retries: 3
     hsi: /usr/local/bin/hsi
-    keytab: /home/bdwheele/.hsi.keytab
+    keytab: asdfasdf.keytab
     user: dlib
     root: AMI
