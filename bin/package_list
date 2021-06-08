@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"Get information about packages"
+import _preamble
+import argparse
+from ami import Ami
+from ami.package_factory import PackageFactory
+import logging
+from pathlib import Path
+import textwrap
+import yaml
+from datetime import datetime
+
+logger = logging.getLogger()
+
+def main():
+    parser = argparse.ArgumentParser()    
+    parser.add_argument('--all', default=False, action="store_true", help="Show all timestamps")
+    parser.add_argument("id", nargs='*', help="Package ID pattern" )
+    args = parser.parse_args()
+
+    ami = Ami()
+    pf = PackageFactory(ami)
+
+    if not args.id:
+        args.id.append('*')
+
+    ids = set()
+    for i in args.id:
+        ids.update(pf.ids(i))
+        
+
+    id_len = max([len(x) for x in ids])
+    for i in ids:
+        pkgs = []
+        if args.all:
+            pkgs = [pf.get_package(i, x) for x in pf.package_timestamps(i)]
+        else:
+            pkgs = [pf.get_package(i)]
+
+        for p in pkgs:
+            sc = datetime.fromtimestamp(p.get_state_change())
+            print(f"{p.get_id():{id_len}s}  {p.get_timestamp()}  {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()} ")
+
+
+
+if __name__ == "__main__":
+    main()

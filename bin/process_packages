@@ -4,9 +4,14 @@ import _preamble
 import argparse
 from ami import Ami
 from ami.package_factory import PackageFactory
-from iulcore.hsicore import HSICore
-import hashlib
+from ami.package import Package
 import logging
+import xml.etree.ElementTree as ET
+import subprocess
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from pathlib import Path
+import json
+from datetime import datetime, timedelta
 
 logger = logging.getLogger()
 
@@ -19,21 +24,258 @@ def main():
 
     ami = Ami()
     pf = PackageFactory(ami)
+    my_config = ami.get_config('process_packages')
+    # process packages...concurrently.  We don't care about the results
+    # since the packages will have their state changed and there's no
+    # return values.
+    with ThreadPoolExecutor(max_workers=my_config['concurrent_packages']) as tpe:            
+        for pkg in pf.packages_by_state('accepted'):
+            tpe.submit(process_package, ami, pkg)
         
+            
+
+def process_package(ami:Ami, pkg:Package):
+    "Process a single package"
     workspace = ami.get_directory('workspace')
     finished = ami.get_directory("finished")
     my_config = ami.get_config('process_packages')
 
-    for pkg in pf.packages_by_state('accepted'):
-        pkg.set_state('processing')        
-        try:
-            raise NotImplementedError("Not yet!")
+    pkg.set_state('processing')        
+    try:
+        pkgdir = workspace / pkg.get_dirname()
+        if not pkgdir.exists():
+            raise FileNotFoundError(f"Package doesn't have a local copy in the workspace")
+
+        datadir = pkgdir / pkg.get_id() / "data"
+        generateddir = pkgdir / "generated"
+
+        # There's a METS file in the package at <root>/<id>/data/mets.xml
+        # In that file look for production_master file group to get the names
+        # of the production master files
+        metsfile = datadir / "mets.xml"
+        if not metsfile.exists():
+            raise FileNotFoundError("Package doesn't contain mets file!")   
+
+        # get the media files and do some simple data collection
+        mediafiles = get_mediafiles(metsfile)
+        errors = []
+        has_video = False # make a note if there's video in this package
+        for f in mediafiles:
+            # make sure the file exists
+            if not (datadir / f).exists():
+                errors.append(f"{f} is specified in the METS file but doesn't exist in data.")
+                continue
+            mediafiles[f]['path'] = datadir / f
+            # make sure we can process it
+            mediafiles[f]['process_type'] = mediafiles[f]['type'].split('/')[0]
+            if mediafiles[f]['process_type'] == 'video':
+                has_video = True
+            if mediafiles[f]['process_type'] not in ('audio', 'video'):
+                errors.append(f"{f} isn't a mime type we can handle: {mediafiles[f]['type']}")
+                continue
 
 
-            pkg.set_state('processed')
-        except Exception as e:
-            pkg.log('error', f"Could not store to SDA: {e}")
-            pkg.set_state('processing_failed')
+        if errors:
+            for e in errors:
+                logger.error(e)
+            raise Exception("Errors during media file scan")
+
+
+        # The files are OK at this point, so let's transcode them
+        futures = {}
+        with ThreadPoolExecutor(max_workers=my_config['concurrent_transcodes']) as tpe:            
+            for f, fdata in mediafiles.items():
+                process_type = fdata['process_type']
+                futures[f] = {}
+                for speed in my_config['transcode'][process_type]:
+                    futures[f][speed] = tpe.submit(transcode_file, 
+                                                   pkg, fdata['path'], speed, generateddir,
+                                                   my_config['ffmpeg'], my_config['transcode'][process_type][speed],
+                                                   my_config['ffprobe'])
+                    
+        # The futures should contain either the name of the derivative & ffprobe or an exception. 
+        errors = False        
+        for fid in futures:
+            mediafiles[fid]['derivatives'] = {}
+            for fspd in futures[fid]:
+                fut = futures[fid][fspd]
+                exc = fut.exception()
+                if exc:              
+                    pkg.log('error', str(exc))      
+                    errors = True
+                else:
+                    outfile, probedata = fut.result()
+                    mediafiles[fid]['derivatives'][fspd] = {
+                        'file': outfile,
+                        'ffprobe': probedata,
+                    }
+        
+        if errors:
+            raise Exception("Errors when creating derivatives")
+
+
+        # Now that we have the derivatives we need, it's time to create the 
+        # metadata file which will be used to import into switchyard.
+        # The big question is how little can I supply and still have switchyard
+        # do what it's supposed to do?
+        metadata = {
+            'group_name': pkg.get_id(),
+            'part_total': 1,
+            'parts': [],
+            'metadata': {
+                'unit': my_config['switchyard_unit'],
+                'audio': not has_video,
+                'format': {
+                    pkg.get_id(): "Unknown",
+                },
+                'mods': None,
+            }
+        }
+
+        # Generate the single part that we need for the files.
+        part = {
+            'files': {},
+            'part': 1,
+        }
+
+        # Walk the struct map to find the IDs from above and collect the structure.
+        root = ET.parse(metsfile)
+        structRoot = root.find(".//{*}structMap")
+        counter = 1
+        for filespec in get_structure(structRoot):
+            if filespec[1] not in mediafiles:
+                continue
+            file = {
+                'ingest': datetime.now().strftime("%Y-%m-%d"),
+                'structure': None,
+                'q': {},
+            }
+            # fill in q
+            for spd in mediafiles[filespec[1]]['derivatives']:
+                spdd = mediafiles[filespec[1]]['derivatives'][spd]
+                sdata = {
+                    'url_http': None,  # filled in during push
+                    'url_rtmp': None,  # filled in during push
+                    'derivative': 1,
+                    'ffprobe': spdd['ffprobe'],
+                    'filename': spdd['file'].name,
+                }
+                file['q'][spd] = sdata
+
+            # fill in structure data for Avalon.  We need to look ffprobe data, so
+            # let's use the 'high' version, since all formats have one of those.
+            fpd = ET.fromstring(mediafiles[filespec[1]]['derivatives']['high']['ffprobe'])
+            format_tag = fpd.find(".//format")            
+            duration = timedelta(seconds=float(format_tag.attrib['duration']))
+            item = ET.Element("Item")
+            item.attrib['label'] = " / ".join(filespec[0])
+            span = ET.Element("Span")
+            span.attrib['label'] = "Segment 1"
+            span.attrib['begin'] = "00:00:00"
+            span.attrib['end'] = str(duration)
+            item.append(span)
+            file['structure'] = str(ET.tostring(item, encoding='utf8', method='xml'), encoding='utf-8')
+            part['files'][counter] = file
+            counter += 1
+
+        metadata['parts'].append(part)
+        metafile = generateddir / (pkg.get_id() + ".json")
+        with open(metafile, "w") as f:
+            json.dump(metadata, f, indent=2, sort_keys=True)
+
+
+
+
+
+        pkg.set_state('accepted')
+    except Exception as e:
+        pkg.log('error', f"Could not process package: {e}", True)
+        #pkg.set_state('processing_failed')
+        pkg.set_state('accepted')
+
+
+
+
+
+
+
+
+
+
+def get_mediafiles(metsfile):
+    "Get the production_master media files (and mime types) in this package"
+    root = ET.parse(metsfile)
+    files = {}           
+    for file in root.findall('.//{*}fileGrp/{*}fileGrp[@USE="production_master"]/{*}file'):                  
+        files[file.attrib['ID']] = {'type': file.attrib['MIMETYPE']}
+    return files
+
+
+def transcode_file(pkg:Package, file:Path, speed, generateddir:Path, ffmpeg, ffmpegargs, ffprobe):
+    """Transcode a single file for a given speed.  Also, generate the accompanying
+       ffprobe data"""
+    pkg.log('info', f"Starting transcoding for {file.name} to {speed}")
+    outfile = generateddir / (file.stem + f"_{speed}.mp4")
+    p = subprocess.run([ffmpeg, 
+                        '-y', '-threads', '0', '-nostdin',
+                        '-i', str(file), *ffmpegargs.split(), str(outfile)],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8')
+    if p.returncode != 0:        
+        raise Exception(f"ffmpeg failed with return code {p.returncode}\n{p.stdout}")
+
+    # get the ffprobe data
+    p = subprocess.run([ffprobe, 
+                        '-print_format', 'xml',
+                        '-show_format', '-show_streams', '-show_error', '-show_chapters',
+                        '-loglevel', '0',
+                        str(outfile)],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        encoding='utf-8')
+    ffprobedata = p.stdout    
+    if p.returncode != 0:
+        raise Exception(f"ffprobe failed with return code {p.returncode}\n{p.stdout}")
+    pkg.log('info', f"Finished transcoding for {file.name} to {speed}")
+    return [outfile, ffprobedata]
+
+
+
+
+
+
+
+def generate_structures(metsfile, valid_files):
+    "Generate the structure XML files for Avalon"
+    results = {}
+    metsroot = ET.parse(metsfile)
+
+
+
+    structroot = ET.Element('Item')
+    
+
+
+
+def get_structure(node:ET.Element, stack=None):    
+    res = []    
+    pos = 0
+    for n in list(node):
+        pos += 1
+        if n.tag.endswith("div"):
+            cstack = [] if stack is None else list(stack)
+            # What to call this node? 
+            if 'LABEL' in n.attrib:
+                cstack.append(n.attrib['LABEL'])
+            elif 'TYPE' in n.attrib:
+                cstack.append(n.attrib['TYPE'])
+            else:
+                cstack.append(f"Position {pos}")            
+            r = get_structure(n, cstack)
+            if len(r):
+                res.extend(r)
+        elif n.tag.endswith("fptr"):            
+            res.append((stack, n.attrib['FILEID']))
+    return res
+
 
 if __name__ == "__main__":
     main()

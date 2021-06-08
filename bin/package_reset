@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"Change the state of a non-deleted, non-finished package"
+"For debugging reset the object to the accepted state and clear the log"
 import _preamble
 import argparse
 from ami import Ami
@@ -12,8 +12,7 @@ logger = logging.getLogger()
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", default=False, action="store_true", help="args are state names")
-    parser.add_argument("--force", default=False, action="store_true", help="force the state change")
-    parser.add_argument("newstate", help="New state")
+    parser.add_argument("--doit", default=False, action="store_true", help="Really do the action")    
     parser.add_argument("id", nargs="+", help="Package ID/states to modify")
     args = parser.parse_args()
 
@@ -36,7 +35,11 @@ def main():
                 if not (workspace / p.get_dirname()).exists():
                     logger.warning(f"Skipping {p.get_id()} since it doesn't have a copy in the working directory")
                 else:
-                    p.set_state(args.newstate, False if args.force else True)
+                    if args.doit:
+                        p.reset()
+                    else:
+                        logger.info(f"Skipping {p.get_id()} because the --doit flag wasn't set")
+                    
             except ValueError as e:
                 print(f"Cannot set state for {p.get_id()}: {e}")
                 continue

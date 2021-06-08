@@ -1,6 +1,8 @@
 from datetime import datetime
 from pymongo.database import Database
 import logging
+import time
+import traceback
 
 class Package:
     states = {
@@ -37,10 +39,11 @@ class Package:
             raise ValueError("Invalid state")
         
         data = {
-            'version': 2,
+            'version': 3,
             'id': pkgid,
             'timestamp': datetime.now().strftime("%Y%m%d-%H%M%S"),
             'state': state,
+            'state_change': time.time(),
             'log': [],
             'app_data': {}
 
@@ -60,10 +63,16 @@ class Package:
         if self.data is None:
             raise KeyError("No package with that id")
         
-        # Migrate to version 2
+        # Migrate to version 2:  add app_data
         if self.data['version'] < 2:
             self.db.packages.update_one({'_id': _id}, {'$set': {'version': 2, 'app_data': {}}})
             self.__init__(db, _id)  # get it again from the DB
+        
+        # Migrate to version 3: add state_time
+        if self.data['version'] < 3:
+            self.db.packages.update_one({'_id': _id}, {'$set': {'version': 3, 'state_change': time.time()}})
+            self.__init__(db, _id)  # get it again from the DB
+
         
     def __str__(self):
         return str(self.data)
@@ -86,22 +95,30 @@ class Package:
         if oldstate != state:
             self.data['state'] = state
             self.db.packages.update_one({'_id': self.data['_id']}, 
-                                        {'$set': {'state': state}})
+                                        {'$set': {'state': state, 'state_change': time.time()}})
             self.log('info', f"State changed from {oldstate} to {self.data['state']}")
 
     def get_state(self):
         "Get the package state"
         return self.data['state']
 
+    def get_state_change(self):
+        "Get the time when the state was changed"
+        return self.data['state_change']
+
+
     def get_logs(self):
         "Return the logs for the package"
         return self.data['logs']
 
-    def log(self, severity, message):
+    def log(self, severity, message, exception=False):
         "Add to the package log"
         if severity.lower() not in ['info', 'warn', 'error', 'debug']:
             raise ValueError("Invalid log severity")
-        
+        # If an exception was passed, push a backtrace into the debug log.
+        if exception:
+            logging.debug(None, exc_info=True)
+
         logging.log(logging.getLevelName(severity.upper()), f"{self.get_id()}({self.get_timestamp()}): {message}")
         msg = {'time': datetime.now().strftime("%Y%m%d-%H%M%S"),
                'severity': severity,
@@ -110,6 +127,16 @@ class Package:
                                     {'$push': {'log': msg}})
         self.data['log'].append(msg)
         
+
+    def reset(self):
+        "Reset the object to accepted and clear out data"
+        self.db.packages.update_one({'_id': self.data['_id']},
+                                    {'$set': {'state': 'accepted', 
+                                              'state_changed': time.time(), 
+                                              'log': [],
+                                              'app_data': {}}})
+        self.log('info', "Object has been reset to its initial state")
+
     def get_timestamp(self):
         "Return the object timestamp"
         return self.data['timestamp']

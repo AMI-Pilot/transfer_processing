@@ -25,7 +25,7 @@ def main():
             if args.state:
                 packages = pf.packages_by_state(i)
             else:
-                packages = list(pf.get_package(i))
+                packages = [pf.get_package(i)]
         except ValueError as e:
             print(f"Cannot resolve {i}: {e}")
             continue

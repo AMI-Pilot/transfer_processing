@@ -10,7 +10,7 @@ class PackageFactory:
     def ids(self, pattern="*"):
         "Return package ids that match the pattern"
         regex = fnmatch.translate(pattern)
-        res = self.db.packages.find({'id': {'$regex': regex}},
+        res = self.db.packages.find({'id': {'$regex': "^" + regex}},
                                     {'id': 1})        
         return res.distinct("id")
 
