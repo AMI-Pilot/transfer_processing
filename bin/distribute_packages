@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"distribute packages to switchyard"
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+from ami.package import Package
+from ami.switchyard import Switchyard
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from iulcore.ius3 import IUS3
+import json
+
+logger = logging.getLogger()
+ami = Ami()
+my_config = ami.get_config('distribute_packages')
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
+    pf = PackageFactory(ami)    
+
+    # Pick up anything that failed so we can try it again.
+    for pkg in pf.packages_by_state('dist_soft_failed'):
+        pkg.log("info", "Repushing package to switchyard")
+        pkg.set_state("processed")
+    
+    # Get the todo list and process them.
+    with ThreadPoolExecutor() as tpe:
+        for pkg in pf.packages_by_state('processed'):
+            tpe.submit(distribute_package, pkg)
+
+    
+
+def distribute_package(pkg:Package):
+    # do some package sanity checks
+    pkg.set_state('distributing')
+    workspace = ami.get_directory("workspace") / pkg.get_dirname()
+    generated_dir = workspace / "generated"
+    metadata_file = generated_dir / f"{pkg.get_id()}.json"
+    if not workspace.exists():
+        pkg.log('error', "The package doesn't exist in the workspace.")
+        pkg.set_state('dist_hard_failed')
+        return
+    
+
+    if not metadata_file.exists():
+        pkg.log('error', "The package doesn't have a switchyard metadata file")
+        pkg.set_state('accepted')
+        return
+
+    with open(metadata_file) as f:
+        metadata = json.load(f)
+
+
+    # Push the derivatives to the HCP   
+    hcp = IUS3(my_config['hcp']['username'],
+               my_config['hcp']['password'],
+               my_config['hcp']['hostname'],
+               my_config['hcp']['bucket'])
+
+
+
+if __name__ == "__main__":
+    main()

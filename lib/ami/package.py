@@ -39,13 +39,15 @@ class Package:
             raise ValueError("Invalid state")
         
         data = {
-            'version': 3,
+            '_version': 1,
             'id': pkgid,
             'timestamp': datetime.now().strftime("%Y%m%d-%H%M%S"),
             'state': state,
             'state_change': time.time(),
             'log': [],
-            'app_data': {}
+            'app_data': {},
+            'sda_location': None,
+            'derivative_names': {}
 
         }
 
@@ -63,15 +65,7 @@ class Package:
         if self.data is None:
             raise KeyError("No package with that id")
         
-        # Migrate to version 2:  add app_data
-        if self.data['version'] < 2:
-            self.db.packages.update_one({'_id': _id}, {'$set': {'version': 2, 'app_data': {}}})
-            self.__init__(db, _id)  # get it again from the DB
-        
-        # Migrate to version 3: add state_time
-        if self.data['version'] < 3:
-            self.db.packages.update_one({'_id': _id}, {'$set': {'version': 3, 'state_change': time.time()}})
-            self.__init__(db, _id)  # get it again from the DB
+        # Add any database version migrations here
 
         
     def __str__(self):
@@ -161,3 +155,14 @@ class Package:
                                     {'$set': {'app_data.' + appname + "." + key: data}})
 
                                     
+    def get_sda_location(self):
+        "Get the root path for the object on SDA"
+        return self.data['sda_location']
+
+    def set_sda_location(self, location):
+        "Set the root path for the object on SDA"
+        self.data['sda_location'] = location
+        self.db.packages.update_one({'_id': self.data['_id']},
+                                    {'$set': {'sda_location': location}})
+
+

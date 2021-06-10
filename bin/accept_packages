@@ -10,23 +10,57 @@ from time import time
 import hashlib
 import yaml
 import logging
+import zipfile
 
 logger = logging.getLogger()
+ami = Ami()
 
-def main():
+def main():    
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
     args = parser.parse_args()
     if not args.debug:
         logger.setLevel(logging.INFO)
-
-    ami = Ami()
+    
     pf = PackageFactory(ami)
-
     dropbox = ami.get_directory('dropbox')
     workspace = ami.get_directory('workspace')    
     my_config = ami.get_config('accept_packages')
     
+
+    # scan dropbox for zipped packages.  If they exist, unzip them, rename them
+    # to .transferred, and then delete the zip if it was successful.
+    for z in dropbox.glob("*.zip"):
+        if not zipfile.is_zipfile(z):
+            logger.debug(f"Skipping {z!s} since it is not a valid zip file")
+            continue
+        # make sure there's not already a package dir here..
+        if (dropbox / z.stem).exists() or (dropbox / (z.stem + ".transferred")).exists():
+            logger.debug(f"Skipping {z!s} because a package directory also exists")
+            continue
+        try:
+            with zipfile.ZipFile(z, "r") as zfile:
+                # Let's make sure that this is a reasonable zip file:
+                # * one toplevel directory entry that matches the stem of the zip file
+                # * it contains a <stem>/bagit.txt file
+                zpath = zipfile.Path(zfile, '/')
+                zroot = list(zpath.iterdir())
+                if not (len(zroot) == 1 and zroot[0].is_dir() and zroot[0].name == z.stem):                    
+                    logger.debug(f"Skipping {z} because it doesn't have a single root with the stem name")
+                    continue
+
+                zfile.extractall(dropbox)
+                (dropbox / z.stem).rename(dropbox / (z.stem + ".transferred"))
+            z.unlink()
+            logger.info(f"Zipped package {z!s} was extracted for processing")
+        except Exception as e:
+            logger.error(f"Cannot extract/rename {z}: {e}")
+            
+
+
+
+
+    # Look for tranferred directories
     for pkgdir in dropbox.glob("*.transferred"):
         if not pkgdir.is_dir() or pkgdir.stat().st_mtime > time() - my_config.get('age', 600):
             # file isn't a directory or it isn't old enough.
@@ -34,12 +68,18 @@ def main():
 
         pkg_id = pkgdir.stem
 
+        overwrite = False
         if pf.package_exists(pkg_id):
             # leave a message in the old one that it is going to be overwritten
             old = pf.get_package(pkg_id)
             old.log("warn", "This package is being overwritten by a new version")
+            old.set_state("to_delete")
+            overwrite = True
 
-        pkg = Package.create(ami.get_db(), pkg_id)
+        pkg = Package.create(ami.get_db(), pkg_id)        
+        if overwrite:
+            pkg.log("info", f"This package overwrites timestamp {old.get_timestamp()}")
+
         pkg.set_state('validating')
         errors = []
         # make sure it looks like a bag

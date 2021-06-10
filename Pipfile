@@ -5,6 +5,8 @@ name = "pypi"
 
 [packages]
 pymongo = "*"
+requests = "*"
+boto3 = "*"
 
 [dev-packages]
 

@@ -8,18 +8,20 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--state", default=False, action="store_true", help="args are state names")
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
     parser.add_argument("--force", default=False, action="store_true", help="force the state change")
     parser.add_argument("newstate", help="New state")
-    parser.add_argument("id", nargs="+", help="Package ID/states to modify")
+    parser.add_argument("id", nargs="+", help="Package spec to modify")
     args = parser.parse_args()
+    
+    if not args.debug:
+        logger.setLevel(logging.INFO)
 
-    ami = Ami()
     pf = PackageFactory(ami)
-
     workspace = ami.get_directory('workspace')
     for i in args.id:
         try:

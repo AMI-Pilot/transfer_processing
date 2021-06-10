@@ -8,6 +8,7 @@ from ami.package_factory import PackageFactory
 import logging
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -16,16 +17,14 @@ def main():
     if not args.debug:
         logger.setLevel(logging.INFO)
 
-    ami = Ami()
-    pf = PackageFactory(ami)
-    
+    pf = PackageFactory(ami)    
     deleteddir = ami.get_directory('deleted')
     workspace = ami.get_directory('workspace')
 
     for state in ('validation_failed', 'local_failed', 'processing_failed', 
                   'hcp_hard_failed', 'dist_hard_failed','sda_hard_failed',
                   'to_delete'):
-        for pkg in pf.packages_by_state(state):
+        for pkg in pf.packages_by_state(state, all=True):
             pkgdir = workspace / pkg.get_dirname()
             if not pkgdir.exists():
                 logger.debug(f"Skipping: Package {pkg.get_id} in state {pkg.get_state()} doesn't exist in the working directory")

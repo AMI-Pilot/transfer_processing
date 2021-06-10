@@ -8,41 +8,35 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--state", default=False, action="store_true", help="args are state names")
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
     parser.add_argument("--doit", default=False, action="store_true", help="Really do the action")    
-    parser.add_argument("id", nargs="+", help="Package ID/states to modify")
+    parser.add_argument("id", nargs="+", help="Package spec to reset")
     args = parser.parse_args()
 
-    ami = Ami()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
     pf = PackageFactory(ami)
-
     workspace = ami.get_directory('workspace')
-    for i in args.id:
-        try:
-            if args.state:
-                packages = pf.packages_by_state(i)
-            else:
-                packages = [pf.get_package(i)]
-        except ValueError as e:
-            print(f"Cannot resolve {i}: {e}")
-            continue
+    packages = pf.find_packages(*args.id)
 
-        for p in packages:
-            try:
-                if not (workspace / p.get_dirname()).exists():
-                    logger.warning(f"Skipping {p.get_id()} since it doesn't have a copy in the working directory")
+    for p in packages:
+        try:
+            if not (workspace / p.get_dirname()).exists():
+                logger.warning(f"Skipping {p.get_id()} since it doesn't have a copy in the working directory")
+            else:
+                if args.doit:
+                    p.reset()
                 else:
-                    if args.doit:
-                        p.reset()
-                    else:
-                        logger.info(f"Skipping {p.get_id()} because the --doit flag wasn't set")
-                    
-            except ValueError as e:
-                print(f"Cannot set state for {p.get_id()}: {e}")
-                continue
+                    logger.info(f"Skipping {p.get_id()} because the --doit flag wasn't set")
+                
+        except ValueError as e:
+            logging.error(f"Cannot reset state for {p.get_id()}/{p.get_timestamp}: {e}")
+            continue
 
 
 if __name__ == "__main__":

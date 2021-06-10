@@ -9,6 +9,7 @@ import hashlib
 import logging
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -17,13 +18,19 @@ def main():
     if not args.debug:
         logger.setLevel(logging.INFO)
 
-    ami = Ami()
     pf = PackageFactory(ami)
         
     workspace = ami.get_directory('workspace')
     finished = ami.get_directory("finished")
     my_config = ami.get_config('store_packages')
 
+    # reset the state for anything that's in soft_failed
+    for pkg in pf.packages.by_state('sda_soft_failed'):
+        pkg.log('info', "Will retry storing")
+        pkg.set_state('distributed')
+
+
+    # get the todo list
     for pkg in pf.packages_by_state('distributed'):
         pkg.set_state('storing')        
         try:

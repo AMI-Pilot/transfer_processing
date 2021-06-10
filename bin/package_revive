@@ -8,14 +8,18 @@ import logging
 from pathlib import Path
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argumet("--debug", default=False, action="store_true", help="Turn on debugging")
     parser.add_argument("newstate", help="New state")
     parser.add_argument("id", nargs="+", help="Package ID to revive")
     args = parser.parse_args()
 
-    ami = Ami()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+
     pf = PackageFactory(ami)
     deldir = ami.get_directory("deleted")
     workspace = ami.get_directory("workspace")

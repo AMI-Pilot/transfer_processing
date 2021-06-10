@@ -71,6 +71,8 @@ digraph {
     
     processed -> distributing;
     distributing -> submitting [label="Derivatives\npushed to HCP"];
+    distributing -> dist_hard_failed [label="Package not\nin workspace"];
+    distributing -> accepted [label="Package missing\nswitchyard metadata"];
     distributing -> hcp_soft_failed [label="HCP push failed"];
     hcp_soft_failed ->processed [label="Retry a finite\nnumber of times"];
     hcp_soft_failed -> hcp_hard_failed [label="HCP retries\nexhausted"];
@@ -82,7 +84,7 @@ digraph {
     dist_waiting -> dist_hard_failed [label="Distribution\nunsuccessful"];
     dist_waiting -> dist_soft_failed [label="Distribution\ntemporarily\nunsuccessful"]
     dist_soft_failed -> dist_hard_failed [label="Retries\nexhausted"];
-    dist_soft_failed -> submitting [label="Retry\nsubmission"];
+    dist_soft_failed -> processed [label="Retry\ndistribution"];
     dist_hard_failed -> cleaning;
     
 

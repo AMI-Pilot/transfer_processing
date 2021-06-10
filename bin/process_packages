@@ -14,6 +14,7 @@ import json
 from datetime import datetime, timedelta
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -22,7 +23,6 @@ def main():
     if not args.debug:
         logger.setLevel(logging.INFO)
 
-    ami = Ami()
     pf = PackageFactory(ami)
     my_config = ami.get_config('process_packages')
     # process packages...concurrently.  We don't care about the results
@@ -30,11 +30,11 @@ def main():
     # return values.
     with ThreadPoolExecutor(max_workers=my_config['concurrent_packages']) as tpe:            
         for pkg in pf.packages_by_state('accepted'):
-            tpe.submit(process_package, ami, pkg)
+            tpe.submit(process_package, pkg)
         
             
 
-def process_package(ami:Ami, pkg:Package):
+def process_package(pkg:Package):
     "Process a single package"
     workspace = ami.get_directory('workspace')
     finished = ami.get_directory("finished")
@@ -123,7 +123,7 @@ def process_package(ami:Ami, pkg:Package):
             'part_total': 1,
             'parts': [],
             'metadata': {
-                'unit': my_config['switchyard_unit'],
+                'unit': None,
                 'audio': not has_video,
                 'format': {
                     pkg.get_id(): "Unknown",
@@ -131,6 +131,20 @@ def process_package(ami:Ami, pkg:Package):
                 'mods': None,
             }
         }
+
+        # Generate the mods record
+        xsltproc = my_config['xsltproc']
+        xsltsheet = ami.resolve_path(my_config['mods_stylesheet'])
+        marcfile = datadir.parent / "marc.xml"
+        if not marcfile.exists():
+            raise Exception("Package doesn't have a MARC file")
+
+        p = subprocess.run([xsltproc, xsltsheet, str(marcfile)], 
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8")
+        if p.returncode != 0:
+            raise Exception(f"Cannot create mods record (rc: {p.returncode}): {p.stderr}")
+        metadata['metadata']['mods'] = p.stdout
+
 
         # Generate the single part that we need for the files.
         part = {
@@ -183,24 +197,11 @@ def process_package(ami:Ami, pkg:Package):
         with open(metafile, "w") as f:
             json.dump(metadata, f, indent=2, sort_keys=True)
 
-
-
-
-
-        pkg.set_state('accepted')
+        pkg.set_state('processed')
     except Exception as e:
         pkg.log('error', f"Could not process package: {e}", True)
-        #pkg.set_state('processing_failed')
-        pkg.set_state('accepted')
-
-
-
-
-
-
-
-
-
+        pkg.set_state('processing_failed')
+        
 
 def get_mediafiles(metsfile):
     "Get the production_master media files (and mime types) in this package"
@@ -236,23 +237,6 @@ def transcode_file(pkg:Package, file:Path, speed, generateddir:Path, ffmpeg, ffm
         raise Exception(f"ffprobe failed with return code {p.returncode}\n{p.stdout}")
     pkg.log('info', f"Finished transcoding for {file.name} to {speed}")
     return [outfile, ffprobedata]
-
-
-
-
-
-
-
-def generate_structures(metsfile, valid_files):
-    "Generate the structure XML files for Avalon"
-    results = {}
-    metsroot = ET.parse(metsfile)
-
-
-
-    structroot = ET.Element('Item')
-    
-
 
 
 def get_structure(node:ET.Element, stack=None):    

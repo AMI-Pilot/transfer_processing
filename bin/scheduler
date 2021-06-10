@@ -18,9 +18,9 @@ import os
 import sys
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
-    ami = Ami()
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug', default=False, action='store_true', help="Turn on debugging")    
     subparsers = parser.add_subparsers(help="Mode", dest="mode")

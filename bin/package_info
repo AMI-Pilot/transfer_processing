@@ -10,29 +10,30 @@ import textwrap
 import yaml
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--state", default=False, action="store_true", help="args are state names")
-    parser.add_argument("id", nargs="+", help="Package ID/states to modify")
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("id", nargs="+", help="Package spec to query")
+    parser.add_argument("--raw", default=False, action="store_true", help="Just dump the raw data")
     args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
 
-    ami = Ami()
     pf = PackageFactory(ami)
-
-    for i in args.id:
-        try:
-            if args.state:
-                packages = pf.packages_by_state(i)
-            else:
-                packages = [pf.get_package(i)]
-        except ValueError as e:
-            print(f"Cannot resolve {i}: {e}")
-            continue
-
-        for p in packages:
+    packages = pf.find_packages(*args.id)    
+    if args.raw:
+        data = {}
+        for p in packages:                
+            data[p.get_id() + "/" + p.get_timestamp()] = p.data
+            p.data['_id'] = str(p.data['_id'])
+        print(yaml.safe_dump(data))
+    else:
+        for p in packages:        
             print(f"Package {p.get_id()} / {p.get_timestamp()}\n======================")
-            print(f"  Schema Version: {p.data['version']}, State: {p.data['state']}")
+            print(f"  State: {p.get_state()}")
+            print(f"  SDA Location: {p.get_sda_location()}")
             print(f"  Local Locations: {[f'{x}/{p.get_dirname()}' for x in ['workspace', 'deleted', 'finished'] if Path(ami.get_directory(x), p.get_dirname()).exists()]}")
 
             print("  Application data:")

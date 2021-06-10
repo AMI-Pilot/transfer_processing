@@ -11,35 +11,23 @@ import yaml
 from datetime import datetime
 
 logger = logging.getLogger()
+ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()    
-    parser.add_argument('--all', default=False, action="store_true", help="Show all timestamps")
-    parser.add_argument("id", nargs='*', help="Package ID pattern" )
+    parser.add_argument('--debug', default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("id", nargs='*', help="Package spec to list" )
     args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
 
-    ami = Ami()
     pf = PackageFactory(ami)
-
     if not args.id:
         args.id.append('*')
-
-    ids = set()
-    for i in args.id:
-        ids.update(pf.ids(i))
-        
-
-    id_len = max([len(x) for x in ids])
-    for i in ids:
-        pkgs = []
-        if args.all:
-            pkgs = [pf.get_package(i, x) for x in pf.package_timestamps(i)]
-        else:
-            pkgs = [pf.get_package(i)]
-
-        for p in pkgs:
-            sc = datetime.fromtimestamp(p.get_state_change())
-            print(f"{p.get_id():{id_len}s}  {p.get_timestamp()}  {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()} ")
+    packages = pf.find_packages(*args.id)
+    for p in packages:
+        sc = datetime.fromtimestamp(p.get_state_change())
+        print(f"{p.get_id():32s} {p.get_timestamp()} {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()} ")
 
 
 

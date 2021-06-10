@@ -6,8 +6,10 @@ from ami.package import Package
 from ami.package_factory import PackageFactory
 import logging
 
+ami = Ami()
+
 def main():
-    ami = Ami()
+    
     db = ami.get_db()
     #pkg = Package.create(db, "test_pkg")
     #print(pkg)
