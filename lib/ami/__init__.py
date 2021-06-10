@@ -14,7 +14,11 @@ from pymongo import MongoClient
 import os
 
 class Ami:
-    def __init__(self):
+    def __init__(self, application=None):
+        if application is None:
+            application = Path(sys.argv[0]).stem
+        self.application = application
+
         # set up and load configuration stuff
         self.root = Path(sys.path[0], "..").resolve()
         self.config_path = Path(self.root, "etc")
@@ -58,9 +62,13 @@ class Ami:
         "Resolve a path relative to the install"
         return Path(self.root, path)
 
-    def get_config(self, app_name):
+    def get_config(self):
         "Return the configuration blob for an application"
-        return self.config['apps'].get(app_name, {})
+        return self.config['apps'].get(self.application, {})
+
+    def get_application(self):
+        "Get the current application name"
+        return self.application
 
 
 

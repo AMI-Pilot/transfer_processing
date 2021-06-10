@@ -14,6 +14,7 @@ import zipfile
 
 logger = logging.getLogger()
 ami = Ami()
+my_config = ami.get_config()
 
 def main():    
     parser = argparse.ArgumentParser()
@@ -25,7 +26,7 @@ def main():
     pf = PackageFactory(ami)
     dropbox = ami.get_directory('dropbox')
     workspace = ami.get_directory('workspace')    
-    my_config = ami.get_config('accept_packages')
+    
     
 
     # scan dropbox for zipped packages.  If they exist, unzip them, rename them
@@ -50,7 +51,9 @@ def main():
                     continue
 
                 zfile.extractall(dropbox)
-                (dropbox / z.stem).rename(dropbox / (z.stem + ".transferred"))
+                xfer = dropbox / (z.stem + ".transferred")
+                (dropbox / z.stem).rename(xfer)
+            
             z.unlink()
             logger.info(f"Zipped package {z!s} was extracted for processing")
         except Exception as e:

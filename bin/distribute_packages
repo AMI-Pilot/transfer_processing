@@ -11,10 +11,11 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from iulcore.ius3 import IUS3
 import json
+from datetime import datetime
 
 logger = logging.getLogger()
 ami = Ami()
-my_config = ami.get_config('distribute_packages')
+my_config = ami.get_config()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -26,7 +27,7 @@ def main():
     pf = PackageFactory(ami)    
 
     # Pick up anything that failed so we can try it again.
-    for pkg in pf.packages_by_state('dist_soft_failed'):
+    for pkg in pf.find_packages('.dist_soft_failed', '.hcp_soft_failed'):
         pkg.log("info", "Repushing package to switchyard")
         pkg.set_state("processed")
     
@@ -34,7 +35,7 @@ def main():
     with ThreadPoolExecutor() as tpe:
         for pkg in pf.packages_by_state('processed'):
             tpe.submit(distribute_package, pkg)
-
+            break  # DEBUG: only do one
     
 
 def distribute_package(pkg:Package):
@@ -48,21 +49,76 @@ def distribute_package(pkg:Package):
         pkg.set_state('dist_hard_failed')
         return
     
-
     if not metadata_file.exists():
         pkg.log('error', "The package doesn't have a switchyard metadata file")
         pkg.set_state('accepted')
         return
+    
 
+    rtmp_pattern = my_config['streaming']['rtmp']
+    http_pattern = my_config['streaming']['http']
+    unit = my_config['switchyard']['unit']
+
+    # load the switchyard metadata file and start updating it...
     with open(metadata_file) as f:
         metadata = json.load(f)
+    metadata['metadata']['unit'] = unit
+
+    try:
+        # Push the derivatives to the HCP   
+        hcp = IUS3(my_config['hcp']['username'],
+                my_config['hcp']['password'],
+                my_config['hcp']['hostname'],
+                my_config['hcp']['bucket'])
+        hcp_files = pkg.get_app_data('distribute_packages', 'hcp_files', {})
+        for p in metadata['parts']:
+            for f in p['files'].values():
+                for q in f['q'].values():
+                    srcfile = generated_dir / q['filename']
+                    randomizer = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                    destfile = unit + "/" + randomizer + "_" + q['filename']
+                    hcp_files[srcfile.name] = destfile
+                    q['rtmp_url'] = rtmp_pattern.replace("{NAME}", destfile)
+                    q['http_url'] = http_pattern.replace("{NAME}", destfile)                                    
+                    pkg.log("info", f"Pushing {q['filename']} to HCP as {destfile}")
+                    with open(srcfile, "rb") as x:
+                        hcp.put(destfile, x)
+                    pkg.log("info", f"Successfully pushed {destfile}")
+        pkg.set_app_data('distribute_packages', 'hcp_files', hcp_files)
+        pkg.set_app_data('distribute_packages', 'hcp_retries', 0)
+    except Exception as e:
+        pkg.log("error", f"Could not copy derivatives to HCP: {e}", exception=True)
+        pkg.set_state('hcp_soft_failed')
+        failcount = pkg.get_app_data('distribute_packages', 'hcp_retries')
+        failcount = 0 if failcount is None else failcount
+        if failcount >= my_config['hcp']['retries']:
+            # exhausted retries.  Fail this for real.
+            pkg.log("error", "Retries exhausted")
+            pkg.set_state('hcp_hard_failed')
+            # clear the value in case we're run later.
+            failcount = -1
+        pkg.set_app_data('distribute_packages', 'hcp_retries', failcount + 1)
+        return
 
 
-    # Push the derivatives to the HCP   
-    hcp = IUS3(my_config['hcp']['username'],
-               my_config['hcp']['password'],
-               my_config['hcp']['hostname'],
-               my_config['hcp']['bucket'])
+    try:
+        # now that the files for this object are on HCP, push the metadata to 
+        # switchyard and hope for the best.
+        pkg.set_state('submitting')
+        sy = Switchyard(my_config['switchyard']['url'],
+                        my_config['switchyard']['token'])
+        sy.submit_group(pkg.get_id(), metadata)
+        # now that switchyard has it, we need to wait for it to process.                
+        # we'll just put the package into the 'dist_waiting' state and
+        # pick it up later...
+        pkg.set_state('dist_waiting')
+
+
+    except Exception as e:
+        pkg.log('error', f'Failed distributing the package: {e}', exception=True)
+        pkg.set_state('dist_hard_failed')
+
+
 
 
 

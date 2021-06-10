@@ -7,8 +7,9 @@ name = "pypi"
 pymongo = "*"
 requests = "*"
 boto3 = "*"
+pyyaml = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.9"
+python_version = "3.8"

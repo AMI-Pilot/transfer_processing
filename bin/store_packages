@@ -22,7 +22,7 @@ def main():
         
     workspace = ami.get_directory('workspace')
     finished = ami.get_directory("finished")
-    my_config = ami.get_config('store_packages')
+    my_config = ami.get_config()
 
     # reset the state for anything that's in soft_failed
     for pkg in pf.packages.by_state('sda_soft_failed'):
@@ -41,7 +41,7 @@ def main():
             # upload to SDA
             hsi = HSICore(my_config['root'],
                           hsiBinary=my_config['hsi'],
-                          keyTab=my_config['keytab'],
+                          keyTab=ami.resolve_path(my_config['keytab']),
                           userName=my_config['user'])
             todo = []
             for f in pkgdir.glob("**/*"):

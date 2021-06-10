@@ -12,7 +12,7 @@ ami = Ami()
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argumet("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
     parser.add_argument("newstate", help="New state")
     parser.add_argument("id", nargs="+", help="Package ID to revive")
     args = parser.parse_args()

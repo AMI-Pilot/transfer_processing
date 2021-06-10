@@ -37,7 +37,7 @@ def main():
             print(f"  Local Locations: {[f'{x}/{p.get_dirname()}' for x in ['workspace', 'deleted', 'finished'] if Path(ami.get_directory(x), p.get_dirname()).exists()]}")
 
             print("  Application data:")
-            print(textwrap.indent(yaml.dump(p.data.get('app_info', {})), "    "))
+            print(textwrap.indent(yaml.dump(p.data.get('app_data', {})), "    "))
             print("  Logs:")
             for l in p.data['log']:
                 print(f"    {l['time']}  {l['severity']:8s}  {l['message']}")

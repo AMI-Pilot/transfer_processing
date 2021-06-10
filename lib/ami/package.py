@@ -47,8 +47,6 @@ class Package:
             'log': [],
             'app_data': {},
             'sda_location': None,
-            'derivative_names': {}
-
         }
 
         res = db.packages.insert_one(data)        
@@ -66,6 +64,10 @@ class Package:
             raise KeyError("No package with that id")
         
         # Add any database version migrations here
+        # * check for version less than migration version
+        # * update the document accordingly
+        # * self.__init__(db, _id)  to refresh from the DB
+        # Repeat for newer versions
 
         
     def __str__(self):
@@ -113,7 +115,7 @@ class Package:
         if exception:
             logging.debug(None, exc_info=True)
 
-        logging.log(logging.getLevelName(severity.upper()), f"{self.get_id()}({self.get_timestamp()}): {message}")
+        logging.log(logging.getLevelName(severity.upper()), f"{self.get_id()}/{self.get_timestamp()}: {message}")
         msg = {'time': datetime.now().strftime("%Y%m%d-%H%M%S"),
                'severity': severity,
                'message': message}               
@@ -139,18 +141,21 @@ class Package:
         "Return the directory name used for the package"
         return self.get_id() + "_" + self.get_timestamp()
 
-    def get_app_data(self, appname, key):
+    def get_app_data(self, appname, key, default=None):
         "Get stored application-specific data for this object"
-        return self.data['app_data'].get(appname, {}).get(key, None)
+        return self.data['app_data'].get(appname, {}).get(key, default)
 
     def set_app_data(self, appname, key, data):
         "Set the stored application-specific data for this object"
         if appname not in self.data['app_data']:
+            print(f"new key: {appname}")
             self.data['app_data'][appname] = {}
             self.db.packages.update_one({'_id': self.data['_id']},
                                         {'$set': {'app_data.' + appname: {}}})
-        
+        #print(self.db.packages.find_one({'_id': self.data['_id']}))
+
         self.data['app_data'][appname][key] = data
+
         self.db.packages.update_one({'_id': self.data['_id']},
                                     {'$set': {'app_data.' + appname + "." + key: data}})
 

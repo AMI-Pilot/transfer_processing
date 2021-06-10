@@ -24,7 +24,7 @@ def main():
         logger.setLevel(logging.INFO)
 
     pf = PackageFactory(ami)
-    my_config = ami.get_config('process_packages')
+    my_config = ami.get_config()
     # process packages...concurrently.  We don't care about the results
     # since the packages will have their state changed and there's no
     # return values.

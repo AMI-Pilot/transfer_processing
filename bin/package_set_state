@@ -23,25 +23,16 @@ def main():
 
     pf = PackageFactory(ami)
     workspace = ami.get_directory('workspace')
-    for i in args.id:
+    packages = pf.find_packages(*args.id)
+    for p in packages:
         try:
-            if args.state:
-                packages = pf.packages_by_state(i)
+            if not (workspace / p.get_dirname()).exists():
+                logger.warning(f"Skipping {p.get_id()} since it doesn't have a copy in the working directory")
             else:
-                packages = [pf.get_package(i)]
+                p.set_state(args.newstate, False if args.force else True)
         except ValueError as e:
-            print(f"Cannot resolve {i}: {e}")
+            print(f"Cannot set state for {p.get_id()}: {e}")
             continue
-
-        for p in packages:
-            try:
-                if not (workspace / p.get_dirname()).exists():
-                    logger.warning(f"Skipping {p.get_id()} since it doesn't have a copy in the working directory")
-                else:
-                    p.set_state(args.newstate, False if args.force else True)
-            except ValueError as e:
-                print(f"Cannot set state for {p.get_id()}: {e}")
-                continue
 
 
 if __name__ == "__main__":

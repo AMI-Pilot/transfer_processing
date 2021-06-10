@@ -12,3 +12,4 @@ logs/[0-9A-Za-z]*
 var/locks/[0-9A-Za-z]*
 
 etc/*.conf
+*.keytab

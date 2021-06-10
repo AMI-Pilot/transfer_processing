@@ -5,10 +5,13 @@ import argparse
 from pathlib import Path
 from ami import Ami
 from ami.package_factory import PackageFactory
+from ami.package import Package
 import logging
 
 logger = logging.getLogger()
 ami = Ami()
+my_config = ami.get_config()
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -17,7 +20,7 @@ def main():
     if not args.debug:
         logger.setLevel(logging.INFO)
     
-    my_config = ami.get_config('store_packages')
+    
 
 if __name__ == "__main__":
     main()
