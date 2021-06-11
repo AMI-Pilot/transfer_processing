@@ -3,6 +3,7 @@ from pymongo.database import Database
 import logging
 import time
 import traceback
+from ami import Ami
 
 class Package:
     states = {
@@ -33,7 +34,7 @@ class Package:
     }
 
     @staticmethod
-    def create(db, pkgid, state="transferred"):
+    def create(ami, pkgid, state="transferred"):
         "Create the a new package in the database"
         if state not in Package.states:
             raise ValueError("Invalid state")
@@ -49,16 +50,18 @@ class Package:
             'sda_location': None,
         }
 
-        res = db.packages.insert_one(data)        
+
+        res = ami.get_db().packages.insert_one(data)        
         _id = res.inserted_id
-        p = Package(db, _id)
+        p = Package(ami, _id)
         p.log("info", "Package initialized")
         return p
 
 
-    def __init__(self, db: Database, _id):
+    def __init__(self, ami:Ami, _id):
         "Reconstitute a package in mongodb into a python object"
-        self.db = db
+        self.ami = ami
+        self.db = ami.get_db()
         self.data = self.db.packages.find_one({'_id': _id})        
         if self.data is None:
             raise KeyError("No package with that id")
@@ -141,18 +144,21 @@ class Package:
         "Return the directory name used for the package"
         return self.get_id() + "_" + self.get_timestamp()
 
-    def get_app_data(self, appname, key, default=None):
+    def get_app_data(self, key, default=None, appname=None):
         "Get stored application-specific data for this object"
+        if appname is None:
+            appname = self.ami.get_application()
         return self.data['app_data'].get(appname, {}).get(key, default)
 
-    def set_app_data(self, appname, key, data):
+    def set_app_data(self, key, data, appname=None):
         "Set the stored application-specific data for this object"
-        if appname not in self.data['app_data']:
-            print(f"new key: {appname}")
+        if appname is None:
+            appname = self.ami.get_application()
+        if appname not in self.data['app_data']:            
             self.data['app_data'][appname] = {}
             self.db.packages.update_one({'_id': self.data['_id']},
                                         {'$set': {'app_data.' + appname: {}}})
-        #print(self.db.packages.find_one({'_id': self.data['_id']}))
+        
 
         self.data['app_data'][appname][key] = data
 

@@ -20,20 +20,56 @@ my_config = ami.get_config()
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("--finalize", default=False, action="store_true", help="Only finalize distribution")
+    parser.add_argument("id", nargs="*", help="Package IDs to process (default:  everything in processed")
     args = parser.parse_args()
     if not args.debug:
         logger.setLevel(logging.INFO)
 
     pf = PackageFactory(ami)    
 
+    # This is the distribution finalization.  
+    # Check with switchyard to see the status of the objects in dist
+    sy = Switchyard(my_config['switchyard']['url'],
+                    my_config['switchyard']['token'])   
+    for pkg in pf.find_packages('.dist_waiting'):
+        print(pkg.get_id())
+        try:
+            x = sy.get_processing_status(pkg.get_id())
+            print(f"Status: {x['status']}, Error: {x['error']}, Message: {x['message']}, Avalon: {x['avalon_chosen']}, PID: {x['avalon_pid']}, URL: {x['avalon_url']}")
+        except Exception as e:
+            pkg.log('error', f"Failed to finalize: {e}", exception=True)
+            pkg.set_state('dist_hard_failed')            
+
+
+
+    if args.finalize:
+        # don't push new objects.
+        exit(0)
+
     # Pick up anything that failed so we can try it again.
     for pkg in pf.find_packages('.dist_soft_failed', '.hcp_soft_failed'):
         pkg.log("info", "Repushing package to switchyard")
         pkg.set_state("processed")
     
+    if not args.id:
+        packages = pf.packages_by_state('processed')
+    else:
+        logger.info(f"Using supplied package list: {args.id}")
+        packages = []
+        for i in args.id:
+            try:
+                p = pf.get_package(i)
+                if p.get_state() != "processed":
+                    raise Exception("Package not in 'processed' state")
+                packages.append(p)
+            except Exception as e:
+                logging.warning(f"Skipping {i}: {e}")
+
+
     # Get the todo list and process them.
     with ThreadPoolExecutor() as tpe:
-        for pkg in pf.packages_by_state('processed'):
+        for pkg in packages:
             tpe.submit(distribute_package, pkg)
             break  # DEBUG: only do one
     
@@ -70,34 +106,46 @@ def distribute_package(pkg:Package):
                 my_config['hcp']['password'],
                 my_config['hcp']['hostname'],
                 my_config['hcp']['bucket'])
-        hcp_files = pkg.get_app_data('distribute_packages', 'hcp_files', {})
+        hcp_files = pkg.get_app_data('hcp_files', {})
         for p in metadata['parts']:
             for f in p['files'].values():
                 for q in f['q'].values():
                     srcfile = generated_dir / q['filename']
-                    randomizer = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                    destfile = unit + "/" + randomizer + "_" + q['filename']
-                    hcp_files[srcfile.name] = destfile
+                    refresh = True
+                    if q['filename'] in hcp_files:
+                        destfile = hcp_files[q['filename']]
+                        # compare the date of the sourcefile vs the one on HCP
+                        desttime = hcp.stat(destfile)['last_modified']
+                        srctime = srcfile.stat().st_mtime
+                        if srctime <= desttime:
+                            pkg.log("info", f"Reusing {destfile} on HCP for {q['filename']}  [src: {srctime}, dest: {desttime}]")    
+                            refresh = False
+                    if refresh:
+                        # generate a new HCP copy
+                        randomizer = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                        destfile = unit + "/" + randomizer + "_" + q['filename']
+                        hcp_files[srcfile.name] = destfile                             
+                        pkg.log("info", f"Pushing {q['filename']} to HCP as {destfile}")                    
+                        with open(srcfile, "rb") as x:
+                            hcp.put(destfile, x)
+                        pkg.log("info", f"Successfully pushed {destfile}")
                     q['rtmp_url'] = rtmp_pattern.replace("{NAME}", destfile)
-                    q['http_url'] = http_pattern.replace("{NAME}", destfile)                                    
-                    pkg.log("info", f"Pushing {q['filename']} to HCP as {destfile}")
-                    with open(srcfile, "rb") as x:
-                        hcp.put(destfile, x)
-                    pkg.log("info", f"Successfully pushed {destfile}")
-        pkg.set_app_data('distribute_packages', 'hcp_files', hcp_files)
-        pkg.set_app_data('distribute_packages', 'hcp_retries', 0)
+                    q['http_url'] = http_pattern.replace("{NAME}", destfile)        
+                    pkg.log("debug", f"Streaming URLS: {q['rtmp_url']}, {q['http_url']}")
+ 
+        pkg.set_app_data('hcp_files', hcp_files)
+        pkg.set_app_data('hcp_retries', 0)
     except Exception as e:
         pkg.log("error", f"Could not copy derivatives to HCP: {e}", exception=True)
         pkg.set_state('hcp_soft_failed')
-        failcount = pkg.get_app_data('distribute_packages', 'hcp_retries')
-        failcount = 0 if failcount is None else failcount
+        failcount = pkg.get_app_data('hcp_retries', 0)
         if failcount >= my_config['hcp']['retries']:
             # exhausted retries.  Fail this for real.
             pkg.log("error", "Retries exhausted")
             pkg.set_state('hcp_hard_failed')
             # clear the value in case we're run later.
             failcount = -1
-        pkg.set_app_data('distribute_packages', 'hcp_retries', failcount + 1)
+        pkg.set_app_data('hcp_retries', failcount + 1)
         return
 
 
@@ -113,6 +161,9 @@ def distribute_package(pkg:Package):
         # pick it up later...
         pkg.set_state('dist_waiting')
 
+    except IOError as e:
+        pkg.log('error', f"Failed distribuing the package: {e}", exception=True)
+        pkg.set_state('dist_soft_failed')
 
     except Exception as e:
         pkg.log('error', f'Failed distributing the package: {e}', exception=True)

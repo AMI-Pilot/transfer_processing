@@ -8,6 +8,9 @@ pymongo = "*"
 requests = "*"
 boto3 = "*"
 pyyaml = "*"
+gunicorn = "*"
+falcon = "*"
+python-daemon = "*"
 
 [dev-packages]
 

@@ -7,6 +7,7 @@ from botocore.utils import fix_s3_host
 from botocore.client import Config
 import hashlib
 import base64
+from datetime import datetime
 
 
 class IUS3:
@@ -37,9 +38,29 @@ class IUS3:
                    'e_tag': x.e_tag,
                    'size': x.size}
 
+    def stat(self, objectname):
+        try:
+            x = self.bucket.Object(objectname)
+            return {'bucket_name': x.bucket_name, 
+                    'key': x.key,
+                    'last_modified': x.last_modified.timestamp(),
+                    'e_tag': x.e_tag,
+                    'size': x.content_length}
+        except Exception as e:
+            return None
+
+
+    def exists(self, objectname):
+        try:
+            x = self.bucket.Object(objectname).e_tag
+            return True
+        except Exception as e:
+            return False
+
+
     def get(self, objectname, handle):
         "get a file using a file-like object"
-        self.bucket.download_fileobj(handle, objectname)
+        self.bucket.download_fileobj(objectname, handle)
 
     def put(self, objectname, handle):
         "put a file using a file-like object"
@@ -47,7 +68,8 @@ class IUS3:
 
     def delete(self, objectname):
         "delete an object"
-        raise NotImplementedError("This is a preservation project")
+        self.bucket.Object(objectname).delete()
+        
 
 
 

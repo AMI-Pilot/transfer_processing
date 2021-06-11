@@ -62,9 +62,11 @@ class Ami:
         "Resolve a path relative to the install"
         return Path(self.root, path)
 
-    def get_config(self):
+    def get_config(self, application=None):
         "Return the configuration blob for an application"
-        return self.config['apps'].get(self.application, {})
+        if application is None:
+            application = self.application
+        return self.config['apps'].get(application, {})
 
     def get_application(self):
         "Get the current application name"

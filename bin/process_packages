@@ -19,17 +19,34 @@ ami = Ami()
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("id", nargs="*", help="Package IDs to process (default:  everything in processed")
     args = parser.parse_args()
     if not args.debug:
         logger.setLevel(logging.INFO)
 
     pf = PackageFactory(ami)
     my_config = ami.get_config()
+
+    if not args.id:
+        packages = pf.packages_by_state('accepted')
+    else:
+        logger.info(f"Using supplied package list: {args.id}")
+        packages = []
+        for i in args.id:
+            try:
+                p = pf.get_package(i)
+                if p.get_state() != "accepted":
+                    raise Exception("Package not in 'accepted' state")
+                packages.append(p)
+            except Exception as e:
+                logging.warning(f"Skipping {i}: {e}")
+
+
     # process packages...concurrently.  We don't care about the results
     # since the packages will have their state changed and there's no
     # return values.
     with ThreadPoolExecutor(max_workers=my_config['concurrent_packages']) as tpe:            
-        for pkg in pf.packages_by_state('accepted'):
+        for pkg in packages:
             tpe.submit(process_package, pkg)
         
             
@@ -129,7 +146,8 @@ def process_package(pkg:Package):
                     pkg.get_id(): "Unknown",
                 },
                 'mods': None,
-            }
+            },
+            'comments': []
         }
 
         # Generate the mods record

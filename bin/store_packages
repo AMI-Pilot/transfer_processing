@@ -70,16 +70,14 @@ def main():
         except Exception as e:
             pkg.log('error', f"Could not store to SDA: {e}")
             pkg.set_state('sda_soft_failed')
-            count = pkg.get_app_data('store_packages', 'retries')
-            count = 0 if count is None else count
-
+            count = pkg.get_app_data('retries', 0)
             if count >= my_config['retries']:
                 # we've failed too many times.  Go ahead and fail it.
                 pkg.log('error', 'SDA Store retries exhausted')
                 pkg.set_state('sda_hard_failed')
-                pkg.set_app_data('store_packages', 'retries', 0)
+                pkg.set_app_data('retries', 0)
             else:
-                pkg.set_app_data('store_packages', 'retries', count + 1)
+                pkg.set_app_data('retries', count + 1)
 
 if __name__ == "__main__":
     main()

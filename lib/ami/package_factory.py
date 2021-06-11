@@ -35,7 +35,7 @@ class PackageFactory:
             pass
         res = self.db.packages.find(query, {'_id': 1}).sort('timestamp', DESCENDING).limit(1)
         if res:            
-            return Package(self.db, res[0]['_id'])
+            return Package(self.ami, res[0]['_id'])
         else:
             raise KeyError("No package with those specs")
 
@@ -61,7 +61,7 @@ class PackageFactory:
             ])
         else:
             res = self.db.packages.find({'state': state})
-        return [Package(self.db, x['_id']) for x in res]
+        return [Package(self.ami, x['_id']) for x in res]
 
 
     def find_packages(self, *packagespec):
@@ -89,7 +89,7 @@ class PackageFactory:
                         tregex = "^" + fnmatch.translate(timestamp) + "$"
                         res = self.db.packages.find({'id': {'$regex': pregex},
                                                      'timestamp': {'$regex': tregex}})
-                        results.update([Package(self.db, x['_id']) for x in res])
+                        results.update([Package(self.ami, x['_id']) for x in res])
                     else:
                         # plain object (use the same method as in packages_by_state)
                         regex = "^" + fnmatch.translate(spec) + "$"
@@ -102,7 +102,7 @@ class PackageFactory:
                             }}, # group so only the first package id is kept
                             {'$replaceRoot': {'newRoot': '$doc'}} # return only the _id fields                            
                         ])
-                        results.update([Package(self.db, x['_id']) for x in res])
+                        results.update([Package(self.ami, x['_id']) for x in res])
 
             except Exception as e:
                 logger.debug(f"Could not find package for {spec}: {e}")

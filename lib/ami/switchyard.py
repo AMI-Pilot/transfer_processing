@@ -31,7 +31,7 @@ class Switchyard:
             except requests.HTTPError as e:
                 if retries < 0 or e.response.status_code == 401:
                     print(e.request.url, e.request.headers)
-                    raise e
+                    raise IOError(e)
                 logger.debug(f"Failed retrieving {method} {url}: {e}")
                 retries -= 1
                 time.sleep(self.retry_time)

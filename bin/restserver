@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""This provides the REST API used to query the state of the 
+   processing and retrieval requests"""
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+from ami.package import Package
+import logging
+import json
+import falcon
+from gunicorn.app.base import BaseApplication
+import gunicorn.glogging
+import daemon
+
+
+ami = Ami()
+my_config = ami.get_config()
+logger = logging.getLogger()
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+    
+    app = falcon.App()
+    pkgresource = PackageResource()
+    app.add_route("/api/v1/packages", pkgresource, suffix="packages")
+    app.add_route("/api/v1/packages/{state}", pkgresource, suffix="packages")
+    app.add_route("/api/v1/package/{pkgid}", pkgresource, suffix="package")
+    app.add_route("/api/v1/package/{pkgid}/{timestamp}", pkgresource, suffix="package")
+    app.add_route("/api/v1/states", pkgresource, suffix='states')
+    RestServiceAppWrapper(app, args.debug).run()
+
+
+class RestServiceAppWrapper(BaseApplication):
+    def __init__(self, application, debug=False):
+        self.application = application
+        self.debug = debug
+        super().__init__()
+
+    def load(self):
+        return self.application
+
+    def load_config(self):
+        "Inject the settings from the application config into gunicorn"
+        config = {key: value for key, value in my_config['gunicorn'].items()
+                  if key in self.cfg.settings and value is not None}
+        # for the file-based keys, resolve the paths
+        for k in ('accesslog', 'errorlog', 'pidfile'):
+            config[k] = ami.resolve_path(config[k])
+        for key, value in config.items():
+            self.cfg.set(key, str(value))
+
+        # override some values with debug-specific values
+        if self.debug:
+            self.cfg.set('loglevel', 'debug')
+            self.cfg.set('workers', 1)
+            self.cfg.set('errorlog', '-')
+
+        # fixed values
+        self.cfg.set('capture_output', True)
+        self.cfg.set('proc_name', ami.get_application())
+
+        if(self.debug):
+            print(self.cfg)
+
+
+# Here's the actual application resources
+class PackageResource:
+    def __init__(self):
+        self.ami = Ami()        
+
+    def on_get_packages(self, req, resp, state=None):
+        resp.text = json.dumps({'msg': f"list packages {state}"})
+        resp.status = falcon.HTTP_200
+
+    
+    def on_get_package(self, req, resp, pkgid=None, timestamp=None):
+        resp.text = json.dumps({'msg':f"get package {pkgid}/{timestamp}"})
+        resp.status = falcon.HTTP_200
+
+    def on_get_states(self, req, resp):
+        resp.text = json.dumps(list(Package.states.keys()))
+        resp.status = falcon.HTTP_200
+
+
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    main()
+
