@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from iulcore.ius3 import IUS3
 import json
 from datetime import datetime
+import time
 
 logger = logging.getLogger()
 ami = Ami()
@@ -49,8 +50,9 @@ def main():
 
     # Pick up anything that failed so we can try it again.
     for pkg in pf.find_packages('.dist_soft_failed', '.hcp_soft_failed'):
-        pkg.log("info", "Repushing package to switchyard")
-        pkg.set_state("processed")
+        if (pkg.get_state() == 'dist_soft_failed' and pkg.get_app_data('switchyard_retry_after') < time.time()) or (pkg.get_state() == 'hcp_soft_failed' and pkg.get_app_data('hcp_retry_after') < time.time()):
+            pkg.log("info", "Repushing package to switchyard")
+            pkg.set_state("processed")
     
     if not args.id:
         packages = pf.packages_by_state('processed')
@@ -146,6 +148,7 @@ def distribute_package(pkg:Package):
             # clear the value in case we're run later.
             failcount = -1
         pkg.set_app_data('hcp_retries', failcount + 1)
+        pkg.set_app_data('hcp_retry_after', time.time() + 60 * my_config['hcp']['retry_interval'])
         return
 
 
@@ -164,10 +167,18 @@ def distribute_package(pkg:Package):
     except IOError as e:
         pkg.log('error', f"Failed distribuing the package: {e}", exception=True)
         pkg.set_state('dist_soft_failed')
-
+        failcount = pkg.get_app_data('switchyard_retries', 0)
+        if failcount >= my_config['switchyard']['retries']:
+            pkg.log("Exhausted retries pushing to switchyard")
+            pkg.set_state('dist_hard_failed')
+            failcount = -1  # reset if we're retried later
+        pkg.set_app_data('switchyard_retries', failcount + 1)
+        pkg.set_app_data('switcyard_retry_after', time.time() + 60 * my_config['switchard']['retry_interval'])
+        return
     except Exception as e:
         pkg.log('error', f'Failed distributing the package: {e}', exception=True)
         pkg.set_state('dist_hard_failed')
+        pkg.set_app_data('switchyard_retries', 0)
 
 
 

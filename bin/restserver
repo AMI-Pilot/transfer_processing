@@ -22,18 +22,38 @@ logger = logging.getLogger()
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("--noauth", default=False, action="store_true", help="Disable authorization")
     args = parser.parse_args()
     if not args.debug:
         logger.setLevel(logging.INFO)
     
     app = falcon.App()
+    if not args.noauth:
+        app.add_middleware(AuthMiddleWare())
+        
     pkgresource = PackageResource()
     app.add_route("/api/v1/packages", pkgresource, suffix="packages")
-    app.add_route("/api/v1/packages/{state}", pkgresource, suffix="packages")
+    app.add_route("/api/v1/packages/by-state/{state}", pkgresource, suffix="packages")
+    app.add_route("/api/v1/packages/by-id/{pkgid}", pkgresource, suffix="packages")
     app.add_route("/api/v1/package/{pkgid}", pkgresource, suffix="package")
     app.add_route("/api/v1/package/{pkgid}/{timestamp}", pkgresource, suffix="package")
     app.add_route("/api/v1/states", pkgresource, suffix='states')
     RestServiceAppWrapper(app, args.debug).run()
+
+
+class AuthMiddleWare:    
+    def process_request(self, req, resp):
+        token = req.get_header('Authorization')
+        if token is None:
+            raise falcon.HTTPUnauthorized(title="Authorization header missing", description="Supply a valid Authentication header")
+        try:
+            authfile = ami.resolve_path(my_config['authfile'])
+            authtoken = authfile.read_text().strip()
+        except Exception as e:
+            raise falcon.HTTPInternalServerError(title="Couldn't get authorization token", descriptin="Server misconfiguration:  can't read authfile")
+        
+        if token != authtoken:
+            raise falcon.HTTPUnauthorized(title="Authorization token mismatch", description="The authorization token supplied doesn't match the expected token")
 
 
 class RestServiceAppWrapper(BaseApplication):
@@ -74,14 +94,34 @@ class PackageResource:
     def __init__(self):
         self.ami = Ami()        
 
-    def on_get_packages(self, req, resp, state=None):
-        resp.text = json.dumps({'msg': f"list packages {state}"})
-        resp.status = falcon.HTTP_200
+    def on_get_packages(self, req, resp, state=None, pkgid=None):
+        try:
+            pf = PackageFactory(ami)
+            if state is None and pkgid is None:            
+                res = pf.ids()
+            elif state is not None:            
+                res = [p.get_id() for p in pf.packages_by_state(state)]
+            elif pkgid is not None:
+                res = pf.package_timestamps(pkgid)
+            resp.text = json.dumps(res)
+            resp.status = falcon.HTTP_200
+        except Exception as e:           
+            resp.text = json.dumps({'error': str(e)})
+            resp.status = falcon.HTTP_500
 
     
-    def on_get_package(self, req, resp, pkgid=None, timestamp=None):
-        resp.text = json.dumps({'msg':f"get package {pkgid}/{timestamp}"})
-        resp.status = falcon.HTTP_200
+    def on_get_package(self, req, resp, pkgid, timestamp=None):
+        try:
+            pf = PackageFactory(ami)
+            res = pf.get_package(pkgid, timestamp)
+            res.data['_id'] = str(res.data['_id'])
+            resp.text = json.dumps(res.data)
+            resp.status = falcon.HTTP_200
+        except Exception as e:           
+            resp.text = json.dumps({'error': str(e)})
+            resp.status = falcon.HTTP_500        
+        
+ 
 
     def on_get_states(self, req, resp):
         resp.text = json.dumps(list(Package.states.keys()))

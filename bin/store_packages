@@ -7,6 +7,7 @@ from ami.package_factory import PackageFactory
 from iulcore.hsicore import HSICore
 import hashlib
 import logging
+import time
 
 logger = logging.getLogger()
 ami = Ami()
@@ -26,8 +27,9 @@ def main():
 
     # reset the state for anything that's in soft_failed
     for pkg in pf.packages.by_state('sda_soft_failed'):
-        pkg.log('info', "Will retry storing")
-        pkg.set_state('distributed')
+        if pkg.get_app_data('retry_after') < time.time():
+            pkg.log('info', "Will retry storing")
+            pkg.set_state('distributed')
 
 
     # get the todo list
@@ -75,9 +77,10 @@ def main():
                 # we've failed too many times.  Go ahead and fail it.
                 pkg.log('error', 'SDA Store retries exhausted')
                 pkg.set_state('sda_hard_failed')
-                pkg.set_app_data('retries', 0)
+                pkg.set_app_data('retries', 0)                                                
             else:
                 pkg.set_app_data('retries', count + 1)
+                pkg.set_app_data('retry_after', time.time() + 60 * my_config['retry_interval'])
 
 if __name__ == "__main__":
     main()
