@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 "Get information about packages"
 import _preamble
 import argparse
@@ -31,7 +31,7 @@ def main():
         print(yaml.safe_dump(data))
     else:
         for p in packages:        
-            print(f"Package {p.get_id()} / {p.get_timestamp()}\n======================")
+            print(f"Package {p.get_id()}/{p.get_timestamp()}\n======================")
             print(f"  State: {p.get_state()}")
             print(f"  SDA Location: {p.get_sda_location()}")
             print(f"  Local Locations: {[f'{x}/{p.get_dirname()}' for x in ['workspace', 'deleted', 'finished'] if Path(ami.get_directory(x), p.get_dirname()).exists()]}")

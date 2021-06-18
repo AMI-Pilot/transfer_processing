@@ -10,7 +10,7 @@ import logging.config
 import logging
 import logging.handlers
 import fcntl
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING, DESCENDING
 import os
 
 class Ami:
@@ -51,6 +51,15 @@ class Ami:
             mdb = MongoClient(**self.config['mongodb']['connection'])
             mdb = mdb.get_database(self.config['mongodb']['database'])            
             sys.db = (os.getpid(), mdb)
+
+            # to database setup here
+            if 'packages' not in mdb.list_collection_names():
+                logging.info("Creating database collections and indexes")
+                mdb.create_collection('packages')
+                mdb.packages.create_index('id')
+                mdb.packages.create_index('timestamp')
+                mdb.packages.create_index([('id', ASCENDING), ('timestamp', DESCENDING)])
+
         return sys.db[1]
 
     def get_directory(self, name):

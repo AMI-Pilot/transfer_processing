@@ -1,0 +1,60 @@
+#!/usr/bin/env -S pipenv run python3
+"retrieve package files from SDA and inject it into the workflow as if it was newly uploaded"
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+from ami.package import Package
+import logging
+from iulcore.hsicore import HSICore, HSIError
+
+logger = logging.getLogger()
+ami = Ami()
+my_config = ami.get_config()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("id", nargs="+", help="IDs to pull from SDA into workflow")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+    
+    pf = PackageFactory(ami)
+    hsiconfig = ami.get_config('store_packages')
+    hsi = HSICore(hsiconfig['root'],
+                hsiBinary=hsiconfig['hsi'],
+                keyTab=ami.resolve_path(hsiconfig['keytab']),
+                userName=hsiconfig['user'])
+    dropbox = ami.get_directory("dropbox")
+    todo = {}
+    for spec in args.id:
+        for pkg in pf.find_packages(spec):
+            if pkg.get_state() not in ('finished', 'deleted'):
+                logger.info(f"Skpping {pkg.get_id()} because it isn't deleted or finished")
+                continue
+            if pkg.get_sda_location() is None:
+                logger.info(f"Skipping {pkg.get_id()} because it is not on SDA")
+                continue
+            # if the same package id shows up more than once, get the newer one.
+            if pkg.get_id() in todo:
+                xp = todo[pkg.get_id()]
+                if xp.get_timestamp() < pkg.get_timestamp():
+                    logger.info(f"Replacing {pkg.get_id()}/{pkg.get_timestamp()} with {xp.get_id()}/{xp.get_timestamp()} in inject list")
+                    todo[pkg.get_id()] = pkg
+            else:
+                todo[pkg.get_id()] = pkg
+
+    for pkg in todo.values():
+        try:            
+            hsi.get(pkg.get_sda_location(), str(dropbox.absolute()))
+            (dropbox / pkg.get_dirname()).rename(dropbox / (pkg.get_id() + ".transferred"))
+            pkg.log("info", "Package has been re-injected into the workflow")
+        except HSIError as e:
+            logger.error(f"Failed to retrieve {pkg.get_id}: {e}")
+            
+
+if __name__ == "__main__":
+    main()

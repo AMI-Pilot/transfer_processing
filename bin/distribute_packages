@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 "distribute packages to switchyard"
 import _preamble
 import argparse
@@ -73,7 +73,8 @@ def main():
     with ThreadPoolExecutor() as tpe:
         for pkg in packages:
             tpe.submit(distribute_package, pkg)
-            break  # DEBUG: only do one
+            if args.debug:
+                break
     
 
 def distribute_package(pkg:Package):
@@ -131,9 +132,9 @@ def distribute_package(pkg:Package):
                         with open(srcfile, "rb") as x:
                             hcp.put(destfile, x)
                         pkg.log("info", f"Successfully pushed {destfile}")
-                    q['rtmp_url'] = rtmp_pattern.replace("{NAME}", destfile)
-                    q['http_url'] = http_pattern.replace("{NAME}", destfile)        
-                    pkg.log("debug", f"Streaming URLS: {q['rtmp_url']}, {q['http_url']}")
+                    q['url_rtmp'] = rtmp_pattern.replace("{NAME}", destfile)
+                    q['url_http'] = http_pattern.replace("{NAME}", destfile)        
+                    pkg.log("info", f"Streaming URLS: {q['url_rtmp']}, {q['url_http']}")
  
         pkg.set_app_data('hcp_files', hcp_files)
         pkg.set_app_data('hcp_retries', 0)

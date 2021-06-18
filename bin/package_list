@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 "Get information about packages"
 import _preamble
 import argparse
@@ -16,6 +16,7 @@ ami = Ami()
 def main():
     parser = argparse.ArgumentParser()    
     parser.add_argument('--debug', default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument('--inactive', default=False, action="store_true", help="Include deleted and finished packages")
     parser.add_argument("id", nargs='*', help="Package spec to list" )
     args = parser.parse_args()
     if not args.debug:
@@ -25,9 +26,11 @@ def main():
     if not args.id:
         args.id.append('*')
     packages = pf.find_packages(*args.id)
-    for p in packages:
+    for p in sorted(packages, key=lambda x: x.get_id() + '/' + x.get_timestamp()):
+        if not args.inactive and p.get_state() in ('deleted', 'finished'):
+            continue
         sc = datetime.fromtimestamp(p.get_state_change())
-        print(f"{p.get_id():32s} {p.get_timestamp()} {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()} ")
+        print(f"{p.get_id():32s}/{p.get_timestamp()} {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()} ")
 
 
 

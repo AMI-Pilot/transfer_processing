@@ -1,5 +1,5 @@
 #!/usr/bin/env -S pipenv run python3
-"some doc here"
+"remove old files from "
 import _preamble
 import argparse
 from pathlib import Path
@@ -7,6 +7,7 @@ from ami import Ami
 from ami.package_factory import PackageFactory
 from ami.package import Package
 import logging
+import time
 
 logger = logging.getLogger()
 ami = Ami()
@@ -20,7 +21,22 @@ def main():
     if not args.debug:
         logger.setLevel(logging.INFO)
     
-    
+    pf = PackageFactory(ami)
+    for state in ('deleted', 'finished'):
+        rootdir = ami.get_directory(state)
+        age = my_config['ages'].get(state, 30) * 24 * 3600
+        for p in pf.packages_by_state(state):
+            if time.time() - p.get_state_change() > age and (rootdir / p.get_dirname()).exists():
+                # TODO: actually do the delete
+                p.log("info", "Package removed from local storage")
+                pass
+            
+            
+        
+        
+
+
+
 
 if __name__ == "__main__":
     main()

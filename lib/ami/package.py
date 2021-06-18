@@ -50,7 +50,6 @@ class Package:
             'sda_location': None,
         }
 
-
         res = ami.get_db().packages.insert_one(data)        
         _id = res.inserted_id
         p = Package(ami, _id)
@@ -175,5 +174,6 @@ class Package:
         self.data['sda_location'] = location
         self.db.packages.update_one({'_id': self.data['_id']},
                                     {'$set': {'sda_location': location}})
+
 
 

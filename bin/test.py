@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 
 import _preamble
 from ami import Ami

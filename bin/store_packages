@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 "copy packages from 'distributed' to SDA and then finish them"
 import _preamble
 import argparse
@@ -66,7 +66,7 @@ def main():
                     md5 = hsi.get_checksum(t[2])
                     if t[3] != md5:
                         raise IOError(f"Checksum failed for {t[0]}:  got {md5}, but expected {t[3]}")
-
+            pkg.set_sda_location(pkgdir.name)
             pkgdir.rename(finished / pkg.get_dirname())            
             pkg.set_state('finished')
         except Exception as e:

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 "For debugging reset the object to the accepted state and clear the log"
 import _preamble
 import argparse

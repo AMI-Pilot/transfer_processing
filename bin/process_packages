@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 "process packages and create derivatives"
 import _preamble
 import argparse
@@ -137,15 +137,25 @@ def process_package(pkg:Package):
         # do what it's supposed to do?
         metadata = {
             'group_name': pkg.get_id(),
-            'part_total': 1,
+            'part_total': "1",
             'parts': [],
             'metadata': {
-                'unit': None,
-                'audio': not has_video,
+                'unit': None,  # supplied at distribution time
+                'audio': str(not has_video).lower(),
                 'format': {
-                    pkg.get_id(): "Unknown",
+                    pkg.get_id(): "Moving image" if has_video else "Sound",
                 },
-                'mods': None,
+                'mods': None,  # will be supplied below
+
+                # fake data...
+                "videoDefinition": "",
+                "videoRecordingStandard": "",
+                "videoImageFormat": "",
+                "title_control_number": "",
+                "iucat_barcode": "",
+                "catalog_key": "",
+                "mods_source": "UM MARC",
+
             },
             'comments': []
         }
@@ -168,6 +178,7 @@ def process_package(pkg:Package):
         part = {
             'files': {},
             'part': 1,
+            'mdpi_barcode': pkg.get_id(),
         }
 
         # Walk the struct map to find the IDs from above and collect the structure.
@@ -180,6 +191,8 @@ def process_package(pkg:Package):
             file = {
                 'ingest': datetime.now().strftime("%Y-%m-%d"),
                 'structure': None,
+                'master_md5': 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
+
                 'q': {},
             }
             # fill in q
@@ -202,7 +215,7 @@ def process_package(pkg:Package):
             item = ET.Element("Item")
             item.attrib['label'] = " / ".join(filespec[0])
             span = ET.Element("Span")
-            span.attrib['label'] = "Segment 1"
+            span.attrib['label'] = "Segment"
             span.attrib['begin'] = "00:00:00"
             span.attrib['end'] = str(duration)
             item.append(span)

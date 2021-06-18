@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 
 import _preamble
 import argparse
@@ -74,13 +74,12 @@ def main():
         overwrite = False
         if pf.package_exists(pkg_id):
             # leave a message in the old one that it is going to be overwritten
-            old = pf.get_package(pkg_id)
-            old.log("warn", "This package is being overwritten by a new version")
-            old.set_state("to_delete")
+            old = pf.get_package(pkg_id)            
             overwrite = True
 
-        pkg = Package.create(ami.get_db(), pkg_id)        
+        pkg = Package.create(ami, pkg_id)        
         if overwrite:
+            old.log("warn", f"This package is being overwritten by a new version with timestamp {pkg.get_timestamp()}")
             pkg.log("info", f"This package overwrites timestamp {old.get_timestamp()}")
 
         pkg.set_state('validating')

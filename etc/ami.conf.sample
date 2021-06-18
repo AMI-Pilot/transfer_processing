@@ -62,8 +62,8 @@ apps:
 
 
   process_packages:
-    ffmpeg: /usr/bin/ffmpeg
-    ffprobe: /usr/bin/ffprobe
+    ffmpeg: /bin/ffmpeg
+    ffprobe: /bin/ffprobe
     concurrent_packages: 3
     concurrent_transcodes: 4
     xsltproc: /usr/bin/xsltproc
@@ -79,7 +79,43 @@ apps:
 
 
   distribute_packages:
-    switchyard_unit: xxxx
+    switchyard:
+      url: https://switchyard.mdpi.iu.edu
+      token: xxxxx
+      unit: UMICH
+      retries: 3
+      retry_interval: 240  # in minutes
     streaming:
-      http: https://xxx/mdpi-playback/{NAME}/playlist.m3u8
-      rtmp: rtmp://xxx/mp4:{NAME}  
+      http: https://streaming.dlib.indiana.edu:4443/avalon_dark/_definst_/mp4:mdpis3-source/mdpi-playback/{NAME}/playlist.m3u8
+      rtmp: rtmp://bl-uits-ct-mdpi.uits.indiana.edu:1935/avalon-dark/_definst_/mp4:{NAME}  
+    hcp:
+      hostname: mdpi.xxxxx.iu.edu
+      username: xxxxx
+      password: xxxxxx
+      bucket: xxxxxx
+      retries: 3
+      retry_interval: 240 # in minutes
+
+
+  store_packages:
+    retries: 3
+    retry_interval: 240  # in minutes
+    hsi: /srv/shared/bin/hsi
+    keytab: etc/hsi.keytab
+    user: xxxxxx
+    root: AMI
+
+
+  purge_packages:
+    ages: # in days
+      deleted: 30
+      finished: 1
+
+  restserver:
+    gunicorn:
+      bind: ":8120"
+      workers: 5
+      accesslog: logs/restserver-access.log
+      errorlog: logs/restserver-error.log
+      pidfile: logs/restserver.pid
+    authfile: etc/ami.auth

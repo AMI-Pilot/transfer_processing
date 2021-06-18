@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S pipenv run python3
 """This provides the REST API used to query the state of the 
    processing and retrieval requests"""
 import _preamble
