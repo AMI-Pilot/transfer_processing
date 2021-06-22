@@ -107,7 +107,7 @@ class Package:
 
     def get_logs(self):
         "Return the logs for the package"
-        return self.data['logs']
+        return self.data['log']
 
     def log(self, severity, message, exception=False):
         "Add to the package log"

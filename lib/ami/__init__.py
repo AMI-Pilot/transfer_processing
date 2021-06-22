@@ -14,7 +14,7 @@ from pymongo import MongoClient, ASCENDING, DESCENDING
 import os
 
 class Ami:
-    def __init__(self, application=None):
+    def __init__(self, application=None, inherit_logging=False):
         if application is None:
             application = Path(sys.argv[0]).stem
         self.application = application
@@ -26,7 +26,8 @@ class Ami:
             self.config = yaml.safe_load(f)        
 
         # configure standard logging
-        logging.config.dictConfig(self.config['logging'])
+        if not inherit_logging:
+            logging.config.dictConfig(self.config['logging'])
 
         # set up the uncaught exception handler
         sys.excepthook = Ami.uncaught_exception

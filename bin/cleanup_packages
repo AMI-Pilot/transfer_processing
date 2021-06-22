@@ -1,14 +1,17 @@
 #!/usr/bin/env -S pipenv run python3
-"Move failed packages to deleted directory"
+"Move failed packages to deleted directory and notify someone"
 import _preamble
 import argparse
 from pathlib import Path
 from ami import Ami
 from ami.package_factory import PackageFactory
 import logging
+import smtplib
+from email.message import EmailMessage
 
 logger = logging.getLogger()
 ami = Ami()
+my_config = ami.get_config()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -21,6 +24,7 @@ def main():
     deleteddir = ami.get_directory('deleted')
     workspace = ami.get_directory('workspace')
 
+    cleanup = []
     for state in ('validation_failed', 'local_failed', 'processing_failed', 
                   'hcp_hard_failed', 'dist_hard_failed','sda_hard_failed',
                   'to_delete'):
@@ -34,10 +38,34 @@ def main():
             try:
                 pkg.set_state('cleaning')            
                 pkgdir.rename(deleteddir / pkg.get_dirname())
+                cleanup.append(pkg)
                 pkg.set_state('deleted')
             except Exception as e:
                 pkg.log("error", f"Failed to clean up {pkg.get_id()}: {e}")
                 pkg.set_state(ostate)
+
+
+    if cleanup:
+        message = "These packages had failures and were 'deleted':\n\n"
+        for c in cleanup:
+            message += f"{c.get_id()}/{c.get_timestamp()}\n"
+            message +=  "=========================================\n"
+            message += "\n".join([str(x) for x in c.get_logs()])
+
+            message += "\n\n"
+
+        msg = EmailMessage()
+        msg['Subject'] = "AMI Failed Package Cleanup"
+        msg['From'] = my_config['from']
+        msg['To'] = ', '.join(my_config['notify'])
+        msg.set_content(message)
+        s = smtplib.SMTP('localhost')
+        s.send_message(msg, my_config['from'], my_config['notify'])
+        s.quit()
+
+
+
+
 
 
 if __name__ == "__main__":

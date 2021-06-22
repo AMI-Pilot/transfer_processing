@@ -21,62 +21,60 @@ digraph {
         rankdir = LR,
         ];
 
-    label = "IU/UM object flow";
+    label = "U-M/IU AMI object flow";
 
     start [label="START", shape="rectangle"];
-    transferred; // [shape="house"];
-    validating;
-    validation_failed [shape="house"];
-    //moving;
-    shaping;
+
+    //transferred; 
+    //validating;
+    validation_failed [shape="house"];    
+    //shaping;
     local_failed [shape="house"];
     accepted [shape="house"];
-    processing;
+
+    //processing;
     processing_failed [shape="house"];
     processed [shape="house"];
-    storing;
+    //storing;
     //stored [shape="house"];
-    sda_soft_failed;
+    //sda_soft_failed;
     sda_hard_failed[shape="house"];
-    distributing;
-    hcp_soft_failed;
+    //distributing;
+    //hcp_soft_failed;
     hcp_hard_failed [shape="house"];
     dist_hard_failed [shape="house"];
-    submitting;
-    dist_waiting;
+    //submitting;
+    //dist_waiting;
     distributed [shape="house"];
-    cleaning;
+    //cleaning;
 
     finished [shape="house"];
     to_delete [shape="house"];
-    deleted;
+    //deleted;
     debugging [shape="octagon"];
 
-
+    edge [color =  1];
     start->transferred [label="Package\ndelivered"];
     transferred-> validating;
     validating -> shaping [label="Package content\nis valid"];
-    validating -> validation_failed [label="Package content\nisn't valid"];
-    validation_failed -> cleaning;
-    //moving -> shaping [label="Moved package to\n working storage"];
-    //moving -> local_failed;
+    validating -> validation_failed [label="Package content\nisn't valid"];    
     shaping -> accepted [label="Working copy\nrestructured\nlike SDA"];
     shaping -> local_failed;
-    local_failed -> cleaning;
+    
+
+    edge [color = 7];
     accepted -> processing;
     processing -> processed [label="Derivatives\ncreated"];
     processing -> processing_failed [label="Derivative\ncreation failed"];
-    processing_failed -> cleaning;
     
-    
+    edge [color = 3];
     processed -> distributing;
     distributing -> submitting [label="Derivatives\npushed to HCP"];
     distributing -> dist_hard_failed [label="Package not\nin workspace"];
     distributing -> accepted [label="Package missing\nswitchyard metadata"];
     distributing -> hcp_soft_failed [label="HCP push failed"];
     hcp_soft_failed ->processed [label="Retry a finite\nnumber of times"];
-    hcp_soft_failed -> hcp_hard_failed [label="HCP retries\nexhausted"];
-    hcp_hard_failed -> cleaning;
+    hcp_soft_failed -> hcp_hard_failed [label="HCP retries\nexhausted"];    
     submitting -> dist_waiting [label="Submitting\nmetadata to\nSwitchyard"];
     submitting -> dist_soft_failed [label="Switchyard\ntemporarily\nunavailable"];
     submitting -> dist_hard_failed [label="Package cannot\nbe distributed"];
@@ -85,22 +83,55 @@ digraph {
     dist_waiting -> dist_soft_failed [label="Distribution\ntemporarily\nunsuccessful"]
     dist_soft_failed -> dist_hard_failed [label="Retries\nexhausted"];
     dist_soft_failed -> processed [label="Retry\ndistribution"];
-    dist_hard_failed -> cleaning;
     
-
-
     
+    edge [color = 4];
     distributed -> storing;
     storing -> finished [label="Package\npushed to SDA"];
     storing -> sda_soft_failed [label="Push to SDA failed"];
     sda_soft_failed -> distributed [label="Retry a finite\nnumber of times"];
     sda_soft_failed -> sda_hard_failed [label="SDA retries\nexhausted"];
+    
+    
+
+    edge [color = 5];
+    validation_failed -> cleaning;
     sda_hard_failed -> cleaning;
-    
-    
-    
+    hcp_hard_failed -> cleaning;
+    dist_hard_failed -> cleaning;
+    local_failed -> cleaning;
+    processing_failed -> cleaning;   
     to_delete -> cleaning [label="Manually\nforce deletion"];
     cleaning -> deleted [label="Failed packages\n moved to temporary\n debugging storage"];
+    
+    
+    edge [color = 6];
     deleted -> debugging [label="May move to\nany other house\nstate manually"];
+
+    subgraph cluster_legend {
+        graph [
+            rankdir = TB;
+        ];
+        node [
+            colorscheme = set312,
+            style = filled,
+            shape = rect,
+        ];
+        label = "Legend";
+        
+        {
+            rank=same;        
+            accept_packages [color = 1, label = "accept_packages"];
+            process_packages [color = 7, label = "process_packages"];
+            distribute_packages [color = 3, label = "distribute_packages"];
+            store_packages [color = 4, label = "store_packages"];
+            cleanup_packages [color = 5, label = "cleanup_packages"];
+            xdebugging [color = 6, label = "Manual Debugging"];
+        }
+        accept_packages -> process_packages -> distribute_packages -> store_packages -> cleanup_packages -> xdebugging [style="invis"];
+
+    }
+
+    debugging -> distribute_packages [style="invis"];
 
 }

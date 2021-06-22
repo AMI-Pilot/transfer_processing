@@ -185,7 +185,7 @@ def process_package(pkg:Package):
         root = ET.parse(metsfile)
         structRoot = root.find(".//{*}structMap")
         counter = 1
-        for filespec in get_structure(structRoot):
+        for filespec in get_structure(pkg, structRoot):
             if filespec[1] not in mediafiles:
                 continue
             file = {
@@ -213,7 +213,8 @@ def process_package(pkg:Package):
             format_tag = fpd.find(".//format")            
             duration = timedelta(seconds=float(format_tag.attrib['duration']))
             item = ET.Element("Item")
-            item.attrib['label'] = " / ".join(filespec[0])
+            #item.attrib['label'] = " / ".join(filespec[0])
+            item.attrib['label'] = f"Part {counter}"
             span = ET.Element("Span")
             span.attrib['label'] = "Segment"
             span.attrib['begin'] = "00:00:00"
@@ -270,7 +271,7 @@ def transcode_file(pkg:Package, file:Path, speed, generateddir:Path, ffmpeg, ffm
     return [outfile, ffprobedata]
 
 
-def get_structure(node:ET.Element, stack=None):    
+def get_structure(pkg:Package, node:ET.Element, stack=None):    
     res = []    
     pos = 0
     for n in list(node):
@@ -284,9 +285,12 @@ def get_structure(node:ET.Element, stack=None):
                 cstack.append(n.attrib['TYPE'])
             else:
                 cstack.append(f"Position {pos}")            
-            r = get_structure(n, cstack)
+            r = get_structure(pkg, n, cstack)
             if len(r):
+                if len(r) > 2:
+                    pkg.log('info', f"There are more than two files on face in\n{ET.tostring(n).decode('utf-8')}")
                 res.extend(r)
+
         elif n.tag.endswith("fptr"):            
             res.append((stack, n.attrib['FILEID']))
     return res

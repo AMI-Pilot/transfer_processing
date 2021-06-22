@@ -134,7 +134,7 @@ def main():
                 except IOError as e:
                     errors.append(f"IOError when generating md5s: {e}")
 
-        # TODO more checks?
+        # TODO: Additional basic checks?
 
 
         if errors:            
