@@ -8,7 +8,7 @@ from ami.package_factory import PackageFactory
 from ami.package import Package
 from ami.switchyard import Switchyard
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from iulcore.ius3 import IUS3
 import json
 from datetime import datetime
@@ -33,16 +33,18 @@ def main():
     # Check with switchyard to see the status of the objects in dist
     sy = Switchyard(my_config['switchyard']['url'],
                     my_config['switchyard']['token'])   
-    for pkg in pf.find_packages('.dist_waiting'):
-        print(pkg.get_id())
+    for pkg in pf.find_packages('.dist_waiting'):        
         try:
             x = sy.get_processing_status(pkg.get_id())
-            print(f"Status: {x['status']}, Error: {x['error']}, Message: {x['message']}, Avalon: {x['avalon_chosen']}, PID: {x['avalon_pid']}, URL: {x['avalon_url']}")
+            if x['status'] == 'deposited':            
+                pkg.log('info', f"Successful distribution.  Status={x['status']}, Message={x['message']}, URL: {x['avalon_url']}")
+                pkg.set_avalon_location(x['avalon_url'])
+                pkg.set_state('distributed')
+            else:
+                logger.debug(f"{pkg.get_id()}/{pkg.get_timestamp()} is still waiting for distribution: Status={x['status']}, Message={x['message']}")            
         except Exception as e:
             pkg.log('error', f"Failed to finalize: {e}", exception=True)
             pkg.set_state('dist_hard_failed')            
-
-
 
     if args.finalize:
         # don't push new objects.
@@ -68,17 +70,22 @@ def main():
             except Exception as e:
                 logging.warning(f"Skipping {i}: {e}")
 
-
+    logging.debug(f"Packages to distribute: {[x.get_id() for x in packages]}")
     # Get the todo list and process them.
-    with ThreadPoolExecutor() as tpe:
+    with ThreadPoolExecutor(max_workers=my_config['concurrent_dists']) as tpe:
+        logging.debug("Ready to distribute.")
         for pkg in packages:
+            logging.debug(f"distributing {pkg.get_id()}")
             tpe.submit(distribute_package, pkg)
-            if args.debug:
-                break
-    
+            #if args.debug:
+            #    break
+        logging.debug("Waiting for dists to finish.")
+        ami.set_proc_title(action="waiting for dists to finish")
+    logging.debug("Distribution finished.")
+
 
 def distribute_package(pkg:Package):
-    # do some package sanity checks
+    # do some package sanity checks    
     pkg.set_state('distributing')
     workspace = ami.get_directory("workspace") / pkg.get_dirname()
     generated_dir = workspace / "generated"
@@ -157,6 +164,10 @@ def distribute_package(pkg:Package):
         # now that the files for this object are on HCP, push the metadata to 
         # switchyard and hope for the best.
         pkg.set_state('submitting')
+        sub_metadata_file = generated_dir / f"{pkg.get_id()}.json.submitted"
+        pkg.log("info", f"Submitted metadata content stored in {sub_metadata_file}")
+        with open(sub_metadata_file, "w") as f:
+            json.dump(metadata, f)
         sy = Switchyard(my_config['switchyard']['url'],
                         my_config['switchyard']['token'])
         sy.submit_group(pkg.get_id(), metadata)

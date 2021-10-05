@@ -34,6 +34,8 @@ def main():
             print(f"Package {p.get_id()}/{p.get_timestamp()}\n======================")
             print(f"  State: {p.get_state()}")
             print(f"  SDA Location: {p.get_sda_location()}")
+            print(f"  Avalon URL: {p.get_avalon_location()}")
+
             print(f"  Local Locations: {[f'{x}/{p.get_dirname()}' for x in ['workspace', 'deleted', 'finished'] if Path(ami.get_directory(x), p.get_dirname()).exists()]}")
 
             print("  Application data:")

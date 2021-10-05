@@ -66,15 +66,17 @@ class HSICore:
 
         if self.connection is None:
             while self.connection is None:
-                self.connection = subprocess.Popen([self.hsiBinary, "-P",
-                                                    "-A", "keytab", "-k",
-                                                    self.keyTab, "-l",
-                                                    self.userName],
+                hsicmd = [self.hsiBinary, "-P",
+                          "-A", "keytab", 
+                          "-k", str(self.keyTab), 
+                          "-l", self.userName]
+                logger.debug(f"HSI command: {hsicmd}")
+                self.connection = subprocess.Popen(hsicmd,
                                                    stdin=subprocess.PIPE,
                                                    stdout=subprocess.PIPE,
                                                    stderr=subprocess.STDOUT,
                                                    encoding="utf-8")
-                # print(self.connection)
+                logger.debug(self.connection)
                 if self.connection.poll() is not None:
                     logger.warn("Cannot connect to HSI.  Will retry in 30 seconds")
                     time.sleep(30)

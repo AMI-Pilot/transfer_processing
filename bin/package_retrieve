@@ -1,0 +1,48 @@
+#!/usr/bin/env -S pipenv run python3
+"Retrieve packages from SDA"
+import _preamble
+import argparse
+from pathlib import Path
+from ami import Ami
+from ami.package_factory import PackageFactory
+from ami.package import Package
+import logging
+from iulcore.hsicore import HSICore
+
+
+logger = logging.getLogger()
+ami = Ami()
+my_config = ami.get_config()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
+    parser.add_argument("id", nargs="+", help="Package spec to retrieve")
+    parser.add_argument("--destdir", type=str, default=ami.get_directory('retrieval'), help="Destination for packages")
+    args = parser.parse_args()
+    if not args.debug:
+        logger.setLevel(logging.INFO)
+    
+    pf = PackageFactory(ami)
+    packages = pf.find_packages(*args.id)    
+    my_config = ami.get_config('store_packages')
+
+    for pkg in packages:
+        try:            
+            hsi = HSICore(my_config['root'],
+                          hsiBinary=my_config['hsi'],
+                          keyTab=ami.resolve_path(my_config['keytab']),
+                          userName=my_config['user'])
+            sda_location = pkg.get_sda_location()
+            dest = Path(args.destdir)            
+            logger.info(f"Retrieving {pkg.get_dirname()} from {sda_location} to {dest!s}")
+            hsi.get(sda_location, str(dest))
+
+
+        except Exception as e:
+            logging.error(f"Could not retrieve from SDA: {e}")
+
+
+if __name__ == "__main__":
+    main()

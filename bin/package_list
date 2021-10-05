@@ -30,7 +30,7 @@ def main():
         if not args.inactive and p.get_state() in ('deleted', 'finished'):
             continue
         sc = datetime.fromtimestamp(p.get_state_change())
-        print(f"{p.get_id():32s}/{p.get_timestamp()} {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()} ")
+        print(f"{p.get_id():32s}/{p.get_timestamp()} {datetime.strftime(sc, '%Y%m%d-%H%M%S')} {p.get_state()}")
 
 
 

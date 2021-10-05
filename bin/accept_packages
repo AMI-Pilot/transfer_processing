@@ -11,6 +11,7 @@ import hashlib
 import yaml
 import logging
 import zipfile
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor, as_completed      
 
 logger = logging.getLogger()
 ami = Ami()
@@ -31,38 +32,12 @@ def main():
 
     # scan dropbox for zipped packages.  If they exist, unzip them, rename them
     # to .transferred, and then delete the zip if it was successful.
-    for z in dropbox.glob("*.zip"):
-        if not zipfile.is_zipfile(z):
-            logger.debug(f"Skipping {z!s} since it is not a valid zip file")
-            continue
-        # make sure there's not already a package dir here..
-        if (dropbox / z.stem).exists() or (dropbox / (z.stem + ".transferred")).exists():
-            logger.debug(f"Skipping {z!s} because a package directory also exists")
-            continue
-        try:
-            with zipfile.ZipFile(z, "r") as zfile:
-                # Let's make sure that this is a reasonable zip file:
-                # * one toplevel directory entry that matches the stem of the zip file
-                # * it contains a <stem>/bagit.txt file
-                zpath = zipfile.Path(zfile, '/')
-                zroot = list(zpath.iterdir())
-                if not (len(zroot) == 1 and zroot[0].is_dir() and zroot[0].name == z.stem):                    
-                    logger.debug(f"Skipping {z} because it doesn't have a single root with the stem name")
-                    continue
-
-                zfile.extractall(dropbox)
-                xfer = dropbox / (z.stem + ".transferred")
-                (dropbox / z.stem).rename(xfer)
-            
-            z.unlink()
-            logger.info(f"Zipped package {z!s} was extracted for processing")
-        except Exception as e:
-            logger.error(f"Cannot extract/rename {z}: {e}")
-            
-
-
-
-
+    
+    with ProcessPoolExecutor(max_workers=my_config['concurrent_unzips']) as ppe:            
+        for z in dropbox.glob("*.zip"):                
+            ppe.submit(unzip_package, z)
+    
+        
     # Look for tranferred directories
     for pkgdir in dropbox.glob("*.transferred"):
         if not pkgdir.is_dir() or pkgdir.stat().st_mtime > time() - my_config.get('age', 600):
@@ -122,17 +97,16 @@ def main():
 
         # load the md5 manifests
         if not errors:
-            for filename, md5 in md5s.items():
-                try:
-                    m = hashlib.md5()
-                    with open(pkgdir / filename, mode="rb") as d:
-                        for chunk in iter(lambda: d.read(4096 * 1024), b""):
-                            m.update(chunk)
-                    cmd5 = m.hexdigest()
-                    if md5.lower() != cmd5.lower():
-                        errors.append(f"Invalid MD5 for {filename}:  got {cmd5}, but expected {md5}")            
-                except IOError as e:
-                    errors.append(f"IOError when generating md5s: {e}")
+            futures = {}
+            with ProcessPoolExecutor(max_workers=my_config['concurrent_md5s']) as ppe:            
+                for filename, md5 in md5s.items():    
+                    futures[filename] = ppe.submit(verify_file, pkgdir, filename, md5)
+            for f in futures.values():
+                res = f.result()
+                if res is not None:
+                    errors.append(res)
+
+
 
         # TODO: Additional basic checks?
 
@@ -161,13 +135,52 @@ def main():
 
 
 
+def unzip_package(z):
+    ami.set_proc_title(action=f"unzipping {z.stem}")
+    dropbox = ami.get_directory('dropbox')
 
+    if not zipfile.is_zipfile(z):
+        logger.debug(f"Skipping {z!s} since it is not a valid zip file")
+        return
+    # make sure there's not already a package dir here..
+    if (dropbox / z.stem).exists() or (dropbox / (z.stem + ".transferred")).exists():
+        logger.debug(f"Skipping {z!s} because a package directory also exists")
+        return
+    try:
+        with zipfile.ZipFile(z, "r") as zfile:
+            # Let's make sure that this is a reasonable zip file:
+            # * one toplevel directory entry that matches the stem of the zip file
+            # * it contains a <stem>/bagit.txt file
+            zpath = zipfile.Path(zfile, '/')
+            zroot = list(zpath.iterdir())
+            if not (len(zroot) == 1 and zroot[0].is_dir() and zroot[0].name == z.stem):                    
+                logger.debug(f"Skipping {z} because it doesn't have a single root with the stem name")
+                return
 
+            zfile.extractall(dropbox)
+            xfer = dropbox / (z.stem + ".transferred")
+            (dropbox / z.stem).rename(xfer)
         
+        z.unlink()
+        logger.info(f"Zipped package {z!s} was extracted for processing")
+    except Exception as e:
+        logger.error(f"Cannot extract/rename {z}: {e}")
 
 
 
-
+def verify_file(pkgdir, filename, md5):
+    ami.set_proc_title(action=f"verifying {filename}")
+    try:
+        m = hashlib.md5()
+        with open(pkgdir / filename, mode="rb") as d:
+            for chunk in iter(lambda: d.read(4096 * 1024), b""):
+                m.update(chunk)
+        cmd5 = m.hexdigest()
+        if md5.lower() != cmd5.lower():
+            return(f"Invalid MD5 for {filename}:  got {cmd5}, but expected {md5}")            
+    except IOError as e:
+        return(f"IOError when generating md5s: {e}")
+    return None
 
 
 

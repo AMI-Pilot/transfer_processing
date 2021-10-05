@@ -8,9 +8,13 @@ from iulcore.hsicore import HSICore
 import hashlib
 import logging
 import time
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger()
 ami = Ami()
+workspace = ami.get_directory('workspace')
+finished = ami.get_directory("finished")
+my_config = ami.get_config()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -21,66 +25,70 @@ def main():
 
     pf = PackageFactory(ami)
         
-    workspace = ami.get_directory('workspace')
-    finished = ami.get_directory("finished")
-    my_config = ami.get_config()
-
     # reset the state for anything that's in soft_failed
-    for pkg in pf.packages.by_state('sda_soft_failed'):
+    for pkg in pf.packages_by_state('sda_soft_failed'):
         if pkg.get_app_data('retry_after') < time.time():
             pkg.log('info', "Will retry storing")
             pkg.set_state('distributed')
 
 
+    with ThreadPoolExecutor(max_workers=my_config['concurrent_uploads']) as tpe:            
+        for pkg in pf.packages_by_state('distributed'):
+            tpe.submit(store_package, pkg)
+        
+
+
+
+def store_package(pkg):    
     # get the todo list
-    for pkg in pf.packages_by_state('distributed'):
-        pkg.set_state('storing')        
-        try:
-            pkgdir = workspace / pkg.get_dirname()
-            if not pkgdir.exists():
-                raise FileNotFoundError(f"Package doesn't have a local copy in the workspace")
+    pkg.set_state('storing')        
+    try:
+        pkgdir = workspace / pkg.get_dirname()
+        if not pkgdir.exists():
+            raise FileNotFoundError(f"Package doesn't have a local copy in the workspace")
 
-            # upload to SDA
-            hsi = HSICore(my_config['root'],
-                          hsiBinary=my_config['hsi'],
-                          keyTab=ami.resolve_path(my_config['keytab']),
-                          userName=my_config['user'])
-            todo = []
-            for f in pkgdir.glob("**/*"):
-                if f.is_dir():
-                    todo.append(['mkdir', pkgdir.name + "/" + str(f.relative_to(pkgdir))])
-                else:                    
-                    m = hashlib.md5()
-                    with open(f, mode="rb") as h:
-                        for chunk in iter(lambda: h.read(4096 * 1024), b""):
-                            m.update(chunk)
-                    md5 = m.hexdigest()
-                    todo.append(['put', pkgdir.name + "/" + str(f.relative_to(pkgdir)), md5])
+        # upload to SDA
+        hsi = HSICore(my_config['root'],
+                        hsiBinary=my_config['hsi'],
+                        keyTab=ami.resolve_path(my_config['keytab']),
+                        userName=my_config['user'])
+        todo = []
+        for f in pkgdir.glob("**/*"):
+            if f.is_dir():
+                todo.append(['mkdir', pkgdir.name + "/" + str(f.relative_to(pkgdir))])
+            else:                    
+                m = hashlib.md5()
+                with open(f, mode="rb") as h:
+                    for chunk in iter(lambda: h.read(4096 * 1024), b""):
+                        m.update(chunk)
+                md5 = m.hexdigest()
+                todo.append(['put', str(f), pkgdir.name + "/" + str(f.relative_to(pkgdir)), md5])
 
-            hsi.mkdir(pkgdir.name)
-            for t in todo:
-                if t[0] == "mkdir":
-                    hsi.mkdir(t[1])
-                elif t[0] == "put":
-                    hsi.put(t[1], t[2])
-                    md5 = hsi.get_checksum(t[2])
-                    if t[3] != md5:
-                        raise IOError(f"Checksum failed for {t[0]}:  got {md5}, but expected {t[3]}")
-            pkg.set_sda_location(pkgdir.name)
-            pkgdir.rename(finished / pkg.get_dirname())            
-            pkg.set_state('finished')
-        except Exception as e:
-            pkg.log('error', f"Could not store to SDA: {e}")
-            pkg.set_state('sda_soft_failed')
-            count = pkg.get_app_data('retries', 0)
-            if count >= my_config['retries']:
-                # we've failed too many times.  Go ahead and fail it.
-                pkg.log('error', 'SDA Store retries exhausted')
-                pkg.set_state('sda_hard_failed')
-                pkg.set_app_data('retries', 0)                                                
-            else:
-                pkg.set_app_data('retries', count + 1)
-                pkg.set_app_data('retry_after', time.time() + 60 * my_config['retry_interval'])
+        hsi.mkdir(pkgdir.name)
+        for t in todo:
+            logger.debug("Processing todo item: {t}")
+            if t[0] == "mkdir":
+                hsi.mkdir(t[1])
+            elif t[0] == "put":
+                hsi.put(t[1], t[2])
+                md5 = hsi.get_checksum(t[2])
+                if t[3] != md5:
+                    raise IOError(f"Checksum failed for {t[0]}:  got {md5}, but expected {t[3]}")
+        pkg.set_sda_location(pkgdir.name)
+        pkgdir.rename(finished / pkg.get_dirname())            
+        pkg.set_state('finished')
+    except Exception as e:
+        pkg.log('error', f"Could not store to SDA: {e}")
+        pkg.set_state('sda_soft_failed')
+        count = pkg.get_app_data('retries', 0)
+        if count >= my_config['retries']:
+            # we've failed too many times.  Go ahead and fail it.
+            pkg.log('error', 'SDA Store retries exhausted')
+            pkg.set_state('sda_hard_failed')
+            pkg.set_app_data('retries', 0)                                                
+        else:
+            pkg.set_app_data('retries', count + 1)
+            pkg.set_app_data('retry_after', time.time() + 60 * my_config['retry_interval'])
 
 if __name__ == "__main__":
     main()

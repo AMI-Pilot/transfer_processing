@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--debug', default=False, action='store_true', help="Turn on debugging")    
     subparsers = parser.add_subparsers(help="Mode", dest="mode")
     p = subparsers.add_parser("schedule", help="Schedule pending tasks")
+    p.add_argument("--task", type=str, default=None, help="Run a specific task")
     p = subparsers.add_parser("status", help="Show system status")
     p = subparsers.add_parser("panic", help="Manage the system panic state")
     p.add_argument("state", choices=['on', 'off', 'check'], help="System panic on/off or check")
@@ -50,7 +51,7 @@ def main():
     elif args.mode == "status":
         status()
     elif args.mode == "schedule":
-        schedule()
+        schedule(args.task, args.debug)
 
 
 
@@ -72,49 +73,61 @@ def hold(task, state):
         holdfile.unlink(missing_ok=True)
 
 
-def schedule():
+def schedule(task, debug):
     panicfile = ami.resolve_path(Path(my_config['lockdir'], 'panic'))
     if panicfile.exists():
         logger.debug("In panic mode, not scheduling anything")
         exit(0)
 
-    bindir = Path(sys.path[0] + "/../bin")
-    for task in my_config['tasks']:
-        exefile = Path(bindir, task)
-        if not (exefile.exists() and exefile.is_file() and exefile.stat().st_mode & 0o111):
-            logger.debug(f"Task {task} ({exefile!s}) is not executable.  Skipping")
-            continue
-        sys.excepthook = None
-        # do a double-fork to detach the child from this process.
-        if os.fork() == 0:
-            # this is the first child
-            # detach from the parent.            
-            os.setsid()
-            sys.stdout.close()
-            sys.stdin.close()
-            sys.stderr.close()            
-            if os.fork() == 0:
-                # the grandchild..where we'll work
-                lockfile = Path(ami.resolve_path(my_config['lockdir']), task + ".lock")
-                if lockfile.exists():
-                    logging.debug(f"Skipping {task}:  lockfile is present")
-                else:
-                    try:
-                        lockfile.touch()
-                        p = subprocess.run(str(exefile), 
-                                           stdout=subprocess.PIPE, 
-                                           stderr=subprocess.STDOUT, 
-                                           encoding="utf-8")
-                        if p.returncode != 0:
-                            logger.error(f"Task {task} failed:\n{p.stdout}")
-                    except Exception as e:
-                        logger.error(f"Failed when executing task {task}: {e}")
-                    finally:
-                        lockfile.unlink(missing_ok=True)                
-        
+    # get the database just to create it if this is the first run.
+    ami.get_db()
 
-            # both child and grandchild exit here.
-            sys.exit(0)
+    bindir = Path(sys.path[0] + "/../bin")
+    if task is None:
+        logger.debug("Scheduling tasks")
+
+        for task in my_config['tasks']:
+            exefile = Path(bindir, task)        
+            if not (exefile.exists() and exefile.is_file() and exefile.stat().st_mode & 0o111):
+                logger.debug(f"Task {task} ({exefile!s}) is not executable.  Skipping")
+                continue
+            
+            # dealing with logging is complex when one does double forking and whatnot.  
+            # BUT, we can cheat by executing ourselves with a task argument
+            lockfile = Path(ami.resolve_path(my_config['lockdir']), task + ".lock")
+            if not lockfile.exists():
+                cmd = [sys.argv[0]]
+                if debug:
+                    cmd.append("--debug")
+                cmd.extend(['schedule', '--task', task])
+                logger.debug(f"Starting background command: {cmd}")                
+                subprocess.Popen(cmd, start_new_session=True, stdout=open("/dev/null"), stderr=open("/dev/null"), close_fds=True)
+            
+        logger.debug("Finished scheduling")
+        exit(0)
+    else:
+        logger.debug(f"Scheduling this specific task: {task}")
+        exefile = Path(bindir, task) 
+
+        lockfile = Path(ami.resolve_path(my_config['lockdir']), task + ".lock")
+        if lockfile.exists():
+            logging.debug(f"Skipping {task}:  lockfile is present")
+        else:
+            try:
+                lockfile.touch()
+                p = subprocess.run(str(exefile), 
+                                    stdout=subprocess.PIPE, 
+                                    stderr=subprocess.STDOUT, 
+                                    encoding="utf-8")
+                if p.returncode != 0:
+                    logger.error(f"Task {task} failed:\n{p.stdout}")
+                else:
+                    logger.debug(f"Task {task} has completed successfully")
+            except Exception as e:
+                logger.error(f"Failed when executing task {task}: {e}")
+            finally:
+                lockfile.unlink(missing_ok=True)                
+        
 
 
 

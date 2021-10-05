@@ -1,5 +1,5 @@
 #!/usr/bin/env -S pipenv run python3
-"remove old files from "
+"remove old files from deleted and finished"
 import _preamble
 import argparse
 from pathlib import Path
@@ -22,7 +22,7 @@ def main():
         logger.setLevel(logging.INFO)
     
     pf = PackageFactory(ami)
-    for state in ('deleted', 'finished'):
+    for state in ('deleted','finished'):
         rootdir = ami.get_directory(state)
         age = my_config['ages'].get(state, 30) * 24 * 3600
         for p in pf.packages_by_state(state):

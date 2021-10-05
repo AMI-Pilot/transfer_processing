@@ -12,12 +12,14 @@ import logging.handlers
 import fcntl
 from pymongo import MongoClient, ASCENDING, DESCENDING
 import os
+import setproctitle
 
 class Ami:
     def __init__(self, application=None, inherit_logging=False):
         if application is None:
             application = Path(sys.argv[0]).stem
         self.application = application
+        self.set_proc_title()
 
         # set up and load configuration stuff
         self.root = Path(sys.path[0], "..").resolve()
@@ -33,7 +35,17 @@ class Ami:
         sys.excepthook = Ami.uncaught_exception
 
         # Things that will be filled in later.
-        sys.db = None
+        sys.db = None   
+
+
+    def set_proc_title(self, application=None, action=None):
+        if application is None:
+            application = self.application
+        if action is None:
+            title = application
+        else:
+            title = application + " - " + action
+        setproctitle.setproctitle(title)
 
 
     @staticmethod

@@ -220,7 +220,7 @@ def process_package(pkg:Package):
             span.attrib['begin'] = "00:00:00"
             span.attrib['end'] = str(duration)
             item.append(span)
-            file['structure'] = str(ET.tostring(item, encoding='utf8', method='xml'), encoding='utf-8')
+            file['structure'] = str(ET.tostring(item, encoding='utf-8', method='xml'), encoding='utf-8')
             part['files'][counter] = file
             counter += 1
 

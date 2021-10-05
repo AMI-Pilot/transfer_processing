@@ -40,7 +40,7 @@ class Package:
             raise ValueError("Invalid state")
         
         data = {
-            '_version': 1,
+            '_version': 2,
             'id': pkgid,
             'timestamp': datetime.now().strftime("%Y%m%d-%H%M%S"),
             'state': state,
@@ -48,6 +48,7 @@ class Package:
             'log': [],
             'app_data': {},
             'sda_location': None,
+            'avalon_location': None,
         }
 
         res = ami.get_db().packages.insert_one(data)        
@@ -67,10 +68,15 @@ class Package:
         
         # Add any database version migrations here
         # * check for version less than migration version
-        # * update the document accordingly
-        # * self.__init__(db, _id)  to refresh from the DB
+        # * update the document on the mongo side
+        # * self.__init__(ami, _id)  to refresh from the DB
         # Repeat for newer versions
-
+        if self.data['_version'] < 2:
+            self.db.packages.update_one({'_id': self.data['_id']},
+                                        {'$set': {'avalon_location': None,
+                                                  '_version': 2}})           
+            self.__init__(ami, self.data['_id'])
+            
         
     def __str__(self):
         return str(self.data)
@@ -176,4 +182,12 @@ class Package:
                                     {'$set': {'sda_location': location}})
 
 
+    def get_avalon_location(self):
+        "Return the URL for the avalon object"
+        return self.data['avalon_location']
 
+    def set_avalon_location(self, location):
+        "Set the URL for the avalon access URL"
+        self.data['avalon_location'] = location
+        self.db.packages.update_one({'_id': self.data['_id']},
+                                    {'$set': {'avalon_location': location}})
