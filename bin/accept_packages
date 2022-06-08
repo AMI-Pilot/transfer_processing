@@ -106,6 +106,13 @@ def main():
                 if res is not None:
                     errors.append(res)
 
+        # there should be a marc.xml or an ead.xml file
+        if not ((pkgdir / "marc.xml").exists() or (pkgdir / "ead.xml").exists()):
+            errors.append("Neither marc.xml nor ead.xml is present")
+
+        # there should also be a mets.xml file in data
+        if not (pkgdir / "data/mets.xml").exists():
+            errors.append("The package doesn't contain a mets file")
 
 
         # TODO: Additional basic checks?

@@ -121,7 +121,7 @@ class Package:
             raise ValueError("Invalid log severity")
         # If an exception was passed, push a backtrace into the debug log.
         if exception:
-            logging.debug(None, exc_info=True)
+            logging.debug("Exception thrown", exc_info=True)
 
         logging.log(logging.getLevelName(severity.upper()), f"{self.get_id()}/{self.get_timestamp()}: {message}")
         msg = {'time': datetime.now().strftime("%Y%m%d-%H%M%S"),

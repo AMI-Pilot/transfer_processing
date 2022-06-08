@@ -5,6 +5,7 @@ import argparse
 from ami import Ami
 from ami.package_factory import PackageFactory
 from ami.package import Package
+from ami.metadata import avalon_mods
 import logging
 import xml.etree.ElementTree as ET
 import subprocess
@@ -12,6 +13,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 import json
 from datetime import datetime, timedelta
+import csv
 
 logger = logging.getLogger()
 ami = Ami()
@@ -19,7 +21,7 @@ ami = Ami()
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", default=False, action="store_true", help="Turn on debugging")
-    parser.add_argument("id", nargs="*", help="Package IDs to process (default:  everything in processed")
+    parser.add_argument("id", nargs="*", help="Package IDs to process (default:  everything in accessed")
     args = parser.parse_args()
     if not args.debug:
         logger.setLevel(logging.INFO)
@@ -145,7 +147,7 @@ def process_package(pkg:Package):
                 'format': {
                     pkg.get_id(): "Moving image" if has_video else "Sound",
                 },
-                'mods': None,  # will be supplied below
+                'mods': avalon_mods(pkg.get_id(), ami.get_directory('metadata'), metsfile, datadir.parent / "marc.xml", datadir.parent / "ead.xml", has_video),
 
                 # fake data...
                 "videoDefinition": "",
@@ -154,25 +156,10 @@ def process_package(pkg:Package):
                 "title_control_number": "",
                 "iucat_barcode": "",
                 "catalog_key": "",
-                "mods_source": "UM MARC",
-
+                "mods_source": "AMI",
             },
             'comments': []
         }
-
-        # Generate the mods record
-        xsltproc = my_config['xsltproc']
-        xsltsheet = ami.resolve_path(my_config['mods_stylesheet'])
-        marcfile = datadir.parent / "marc.xml"
-        if not marcfile.exists():
-            raise Exception("Package doesn't have a MARC file")
-
-        p = subprocess.run([xsltproc, xsltsheet, str(marcfile)], 
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8")
-        if p.returncode != 0:
-            raise Exception(f"Cannot create mods record (rc: {p.returncode}): {p.stderr}")
-        metadata['metadata']['mods'] = p.stdout
-
 
         # Generate the single part that we need for the files.
         part = {
@@ -192,7 +179,6 @@ def process_package(pkg:Package):
                 'ingest': datetime.now().strftime("%Y-%m-%d"),
                 'structure': None,
                 'master_md5': 'DEADBEEFDEADBEEFDEADBEEFDEADBEEF',
-
                 'q': {},
             }
             # fill in q
