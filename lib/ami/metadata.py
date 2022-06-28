@@ -106,22 +106,21 @@ def avalon_mods(barcode, metadir, metsfile: Path, marcfile: Path, eadfile: Path,
     
     # date issued
     ET.SubElement(ET.SubElement(mods, 'originInfo'), 
-                'dateIssued').text = metadata['dateissued']
+                'dateIssued', attrib={'encoding': 'marc'}).text = metadata['dateissued']
 
     # format template (typeOfResource and physicalDescription)
     ET.SubElement(mods, 'typeOfResource').text = 'moving image' if has_video else 'sound recording'
     pd = ET.SubElement(mods, 'physicalDescription')
     ET.SubElement(pd, 'form', attrib={'authority': 'gmd'}).text =  'video recording' if has_video else 'sound recording'
-    # I can't guarantee a fixed set of inputs from UMICH, so we're going to ignore this.
-    #ET.SubElement(pd, 'form', attrib={'authority': 'marcsmd'}).text = "'sound disc' or 'videocassete' or 'sound tape reel' or 'videodisc"
         
     # unit note.
     ET.SubElement(mods, 'note', attrib={'type': 'general'}).text = "Collection Name: UMICH"
 
     # identifiers...can repeat for different things...
-    ET.SubElement(mods, 'identifier', attrib={'type': 'local', 'displayLabel': 'UMICH Barcode'}).text = barcode
+    relItem = ET.SubElement(mods, 'relatedItem', attrib={'type': 'original'})
+    ET.SubElement(relItem, 'identifier', attrib={'type': 'local', 'displayLabel': 'UMICH Barcode'}).text = barcode
     for d, n in metadata['identifiers']:
-        ET.SubElement(mods, 'identifier', attrib={'type': 'local', 'displayLabel': d}).text = n
+        ET.SubElement(relItem, 'identifier', attrib={'type': 'local', 'displayLabel': d}).text = n
 
     # record info template
     # No info from UMICH to generate this.
@@ -131,6 +130,7 @@ def avalon_mods(barcode, metadir, metsfile: Path, marcfile: Path, eadfile: Path,
     #ET.SubElement(ri, 'recordIdentifier', attrib={'source': 'UMICH'}).text = barcode
     
     prettify(mods)
+    logging.debug(ET.tostring(mods).decode())
     return ET.tostring(mods).decode()
     
 
