@@ -28,15 +28,21 @@ digraph {
     workspace [label="Work disk\non Capybara"];
     sda [label="Scholarly\nData Archive"];
     hcp [label="Hitachi\nContent\nPlatform"];
+    dark_avalon [label="Dark Avalon"];
     avalon [label="Media\nCollections\nOnline"];
 
     um -> dropbox [label="upload"];
     dropbox -> workspace [label="move"];
-    workspace -> sda [label="archive"];
-    workspace -> hcp [label="publish"];
+    workspace -> sda [label="archive\npackage"];
+    workspace -> hcp [label="distribute\nderivatives"];
+    hcp -> dark_avalon [label="stream"];
     hcp -> avalon [label="stream"];
     sda -> dropbox [label="retrieve"];
     dropbox -> um [label="retrieve"];
+
+    // metadata
+    workspace -> dark_avalon [label="distribute\nmetadata", style="dashed"];
+    dark_avalon -> avalon [label="publish\nmetadata", style="dashed"];
 
 
 }
